@@ -1,4 +1,4 @@
-# Retail Insights Assistant 🛍️📊
+w# Retail Insights Assistant 🛍️📊
 
 **GenAI-Powered Multi-Agent System for Retail Analytics**
 
@@ -595,10 +595,10 @@ streamlit run app.py --server.port 8502
 
 ### Project Documentation
 - [Agent Comparison Guide](docs/AGENT_COMPARISON.md) - Detailed guide on LangGraph vs Multi-Agent
-- [Architecture Presentation](ARCHITECTURE.md) - 15-slide technical architecture
+- [Architecture Presentation](docs/ARCHITECTURE.md) - 15-slide technical architecture
 - [LangGraph Workflow Visualization](docs/LANGGRAPH_VISUALIZATION.md) - 7-node state machine diagram
-- [Project Structure](PROJECT_STRUCTURE.md) - Code organization guide
-- [Scalability Design](SCALABILITY_DESIGN.md) - 100GB+ scale architecture
+- [Project Structure](docs/PROJECT_STRUCTURE.md) - Code organization guide
+- [Scalability Design](docs/SCALABILITY_DESIGN.md) - 100GB+ scale architecture
 - [Screenshots Guide](SCREENSHOTS_GUIDE.md) - UI feature documentation
 - [DuckDB Documentation](https://duckdb.org/docs/)
 
