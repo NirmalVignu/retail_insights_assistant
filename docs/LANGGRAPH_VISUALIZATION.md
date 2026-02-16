@@ -225,6 +225,3 @@ The LangGraph agent is available in the Q&A Chat tab:
 
 ---
 
-**Generated**: February 15, 2026  
-**Project**: Retail Insights Assistant  
-**Assignment**: Blend360 GenAI Assignment
