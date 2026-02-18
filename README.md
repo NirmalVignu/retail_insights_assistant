@@ -67,7 +67,7 @@ An intelligent retail analytics assistant that combines LangGraph-based multi-ag
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    STREAMLIT UI (app.py)                    │
+│                    STREAMLIT UI (app_new.py)                 │
 │  Tab1: Summarization │ Tab2: Q&A │ Tab3: Explorer │ Tab4: Analyst │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -196,7 +196,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 ### Step 5: Run the Application
 ```bash
-streamlit run app.py
+streamlit run app_new.py
 ```
 
 The application will open in your default browser at `http://localhost:8501`
@@ -207,33 +207,42 @@ The application will open in your default browser at `http://localhost:8501`
 
 ```
 retail_insights_assistant/
-├── app.py                          # Main Streamlit application
+├── app_new.py                       # Main Streamlit application
 ├── config.py                       # Configuration settings
 ├── requirements.txt                # Python dependencies
 ├── .env                           # Environment variables (create this)
 ├── .gitignore                     # Git ignore patterns
 │
-├── Core Modules:
-├── langgraph_agent.py             # LangGraph Q&A agent with tools
-├── multi_agent.py                 # Multi-agent orchestrator (4 agents)
-├── enhanced_query_resolution.py   # NLP to SQL query resolution
-├── data_processor.py              # DuckDB data operations
-├── summarization_engine.py        # Business intelligence reports
-├── response_formatter.py          # Response formatting & visualizations
-├── conversation_memory.py         # RAG-based conversation memory
+├── src/                           # Organized source code
+│   ├── agents/                   # Multi-agent system
+│   ├── graph/                    # LangGraph workflow
+│   ├── utils/                    # Utilities & helpers
+│   └── ui/                       # UI components
 │
-├── Utilities:
-├── input_loader.py                # CSV/Excel/JSON data loading
-├── llm_config.py                  # LLM provider configuration
-├── pdf_report_generator.py        # PDF export functionality
-├── qa_tab.py                      # Q&A tab helpers
+├── prompts/                       # Externalized LLM prompts (8 files)
+│   ├── query_resolution_prompt.txt
+│   ├── query_decomposition_prompt.txt
+│   ├── llm_analysis_prompt.txt
+│   ├── validation_analyst_prompt.txt
+│   ├── data_analyst_prompt.txt
+│   ├── summarization_prompt.txt
+│   ├── comparative_summarization_prompt.txt
+│   └── comparison_prompt.txt
 │
-└── Documentation:
-    ├── README.md                   # This file
-    ├── ARCHITECTURE.md             # System architecture & scalability
-    ├── SCALABILITY_DESIGN.md       # 100GB+ scaling design
-    └── SCREENSHOTS_GUIDE.md        # UI documentation guide
+├── docs/                          # Documentation
+│   ├── ARCHITECTURE.md
+│   ├── PROJECT_STRUCTURE.md      # Detailed code organization
+│   ├── LANGGRAPH_VISUALIZATION.md
+│   ├── AGENT_COMPARISON.md
+│   └── SCALABILITY_DESIGN.md
+│
+├── data/                          # Sample datasets
+│   └── Sales Dataset/
+│
+└── screenshots/                   # UI documentation
 ```
+
+**Note**: See [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for detailed file-by-file documentation.
 
 ---
 
@@ -562,7 +571,7 @@ pip install -r requirements.txt --force-reinstall
 ### Issue: "Port already in use"
 **Solution:** Run on different port
 ```bash
-streamlit run app.py --server.port 8502
+streamlit run app_new.py --server.port 8502
 ```
 
 ### Issue: "Out of memory"

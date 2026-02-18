@@ -111,6 +111,221 @@
 
 ---
 
+## Slide 2.5: User Interface Layer - 4 Interactive Tabs
+
+### Streamlit UI Architecture
+
+The application provides **4 specialized tabs**, each optimized for different analytics workflows:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      STREAMLIT WEB APPLICATION                   │
+│                         (app_new.py)                             │
+├──────────────┬──────────────┬──────────────┬───────────────────┤
+│              │              │              │                    │
+│  📈 Tab 1    │  💬 Tab 2    │  📋 Tab 3    │  🔬 Tab 4         │
+│              │              │              │                    │
+│ Automated    │ Conversational│ Data        │ Statistical       │
+│ Summaries    │ Q&A          │ Explorer    │ Analyst           │
+│              │              │              │                    │
+└──────┬───────┴──────┬───────┴──────┬───────┴────────┬──────────┘
+       │              │              │                │
+       ▼              ▼              ▼                ▼
+  Summarization  LangGraph     DataProcessor   DataAnalyst
+     Engine      Multi-Agent    (DuckDB)         Agent
+```
+
+---
+
+### Tab 1: 📈 Automated Data Summarization
+
+**Purpose**: AI-generated business intelligence reports
+
+**Core Features**:
+- **Single Table Summary**:
+  - Executive summary with quantified insights
+  - Top N analysis (categories, products, regions)
+  - Trend identification with growth rates
+  - Strategic recommendations
+  
+- **Multi-Table Comparison**:
+  - Dimensional overlap analysis
+  - Integration opportunity scoring
+  - Data consolidation roadmap
+
+**Output**: Markdown report + PDF export capability
+
+**Technology**:
+- `SummarizationEngine` (src/agents/summarization_engine.py)
+- External prompts: `summarization_prompt.txt`, `comparative_summarization_prompt.txt`
+- PDF generation: ReportLab library
+
+**Performance**: 
+- Small datasets (<1K rows): 3-5 seconds
+- Large datasets (>100K rows): 10-15 seconds
+
+---
+
+### Tab 2: 💬 Conversational Q&A (Dual Agent Architecture)
+
+**Purpose**: Natural language queries with intelligent routing
+
+#### Agent Selection UI
+Users choose between two query engines optimized for different complexity levels:
+
+**🧠 LangGraph Agent** (Advanced)
+- **Architecture**: 7-node state machine
+- **Best For**: Complex, multi-step analytical questions
+- **Workflow**:
+  1. `analyze_query` → Parse intent
+  2. `decompose_query` → Split into sub-queries (if complex)
+  3. `extract_data` → Execute SQL queries
+  4. `validate_results` → Quality checks
+  5. `refine_query` → Retry optimization (conditional)
+  6. `llm_analysis` → Generate insights
+  7. `format_response` → Structure answer
+  
+- **Use Cases**: 
+  - Trend comparisons across dimensions
+  - Multi-period analysis
+  - Correlation detection
+  - Questions requiring reasoning chains
+
+**🤖 Multi-Agent Orchestrator** (Fast)
+- **Architecture**: 4-agent linear pipeline
+- **Best For**: Simple aggregations and lookups
+- **Workflow**:
+  1. QueryResolution → Map NL to SQL spec
+  2. DataExtraction → Execute query
+  3. Validation → Verify results
+  4. Formatting → Structure response
+
+- **Use Cases**:
+  - Total revenue, counts, averages
+  - Top N queries
+  - Simple filtering and grouping
+  - Dashboard-style metrics
+
+**Common UI Features** (Both Agents):
+- ✅ Confidence score badges (color-coded: green >0.7, yellow 0.4-0.7, red <0.4)
+- ✅ Conversation memory with "Clear History" button
+- ✅ Suggested follow-up questions (clickable)
+- ✅ Auto-generated visualizations (Plotly charts)
+- ✅ Data source selector (specific table vs all tables)
+- ✅ Copy response button
+- ✅ Export chat history option
+
+**Technology**:
+- LangGraph: `src/graph/langgraph_agent.py`
+- Multi-Agent: `src/agents/multi_agent.py`
+- Memory: FAISS vector store (RAG pattern)
+- Prompts: 6 external files (query_resolution, decomposition, llm_analysis, validation, data_analyst)
+
+**Performance**:
+- Simple queries (Multi-Agent): 1-2 seconds
+- Complex queries (LangGraph): 4-8 seconds
+- Memory search latency: <100ms
+
+---
+
+### Tab 3: 📋 Data Explorer (AI-Free Exploration)
+
+**Purpose**: Quick data inspection without LLM costs
+
+**Features**:
+1. **Table Selector**: Dropdown of all loaded tables
+2. **Metadata Panel**:
+   - Row count, column count
+   - Data source file path
+   - Load timestamp
+3. **Data Preview**: First 100 rows (interactive table)
+4. **Column Profiling**:
+   - Column names + data types
+   - Missing value percentages
+   - Unique value counts
+5. **Quick Stats**: Min/max/avg for numeric columns
+
+**Sub-tabs**:
+- **Data View**: Raw table display with sorting
+- **Visualizations**: Auto-generated charts (histograms, time series)
+- **Analytics**: Simple aggregations (sum/avg/count by category)
+
+**Technology**:
+- Direct DuckDB queries (no LLM calls)
+- Streamlit native table component
+- Plotly Express for visualizations
+
+**Performance**: <500ms (instant, no API calls)
+
+**Use Cases**:
+- Verify data loaded correctly
+- Quick sanity checks
+- Understand schema before asking questions
+- Spot obvious quality issues
+
+---
+
+### Tab 4: 🔬 Data Analyst (Comprehensive Profiling)
+
+**Purpose**: Professional statistical analysis and data quality assessment
+
+**Report Sections**:
+1. **Executive Overview**:
+   - Business domain detection
+   - Data maturity scoring (1-5)
+   - Dataset complexity assessment
+   
+2. **Statistical Findings**:
+   - Distribution analysis (histograms, KDE)
+   - Range analysis (min/max/quartiles)
+   - Variability metrics (std dev, CV)
+   - Correlation matrix
+   
+3. **Data Quality Assessment**:
+   - Completeness score (0-100%)
+   - Duplicate detection
+   - Missing value patterns
+   - Consistency checks
+   
+4. **Anomaly Detection** (3 severity levels):
+   - 🔴 **Critical**: >3 std deviations (immediate attention)
+   - 🟡 **Moderate**: 2-3 std deviations (review recommended)
+   - 🟢 **Minor**: 1-2 std deviations (monitor)
+   
+5. **Categorical Insights**:
+   - Top categories by frequency
+   - Category diversity (Shannon entropy)
+   - Rare category identification
+   
+6. **Recommendations**:
+   - Prioritized action items (High/Med/Low)
+   - Data cleaning steps
+   - Feature engineering opportunities
+
+**Interactive Visualizations** (4 sub-tabs):
+- **Distributions**: Histograms for all numeric columns
+- **Categories**: Bar charts for categorical breakdowns  
+- **Correlation Matrix**: Heatmap showing relationships
+- **Box Plots**: Outlier visualization with quartiles
+
+**Technology**:
+- `DataAnalystAgent` (src/agents/multi_agent.py)
+- Pandas statistical functions
+- Plotly interactive visualizations
+- External prompt: `data_analyst_prompt.txt`
+
+**Performance**: 
+- Small datasets (<10K rows): 2-3 seconds
+- Large datasets (>100K rows): 8-12 seconds
+
+**Use Cases**:
+- Pre-analysis data profiling
+- Data quality audits
+- Outlier investigation
+- Understanding data distributions before modeling
+
+---
+
 ## Slide 3: Multi-Agent System Design
 
 ### 4-Agent Architecture
@@ -463,6 +678,44 @@ User Query
 
 ### Prompt Engineering Strategy
 
+**0. Externalized Prompt Management** (Production Best Practice):
+```
+All LLM prompts are externalized to prompts/ folder:
+
+├── prompts/
+│   ├── query_resolution_prompt.txt       # Query intent analysis
+│   ├── query_decomposition_prompt.txt    # Complex query breakdown
+│   ├── llm_analysis_prompt.txt           # LLM-based insights
+│   ├── validation_analyst_prompt.txt     # Result validation
+│   ├── data_analyst_prompt.txt           # Statistical analysis
+│   ├── summarization_prompt.txt          # Business reports
+│   ├── comparative_summarization_prompt.txt # Multi-table comparison
+│   └── comparison_prompt.txt             # Table comparison
+
+Benefits:
+✓ Version control on prompts independently from code
+✓ A/B testing without code deployment
+✓ Non-technical teams can optimize prompts
+✓ Consistent prompt loading via src/utils/prompt_loader.py
+✓ Template variable substitution with .format()
+
+Usage:
+```python
+from src.utils.prompt_loader import load_prompt
+
+# Load prompt (automatically adds .txt extension)
+prompt = load_prompt("summarization_prompt")
+
+# With variable substitution
+template = load_prompt("llm_analysis_prompt")
+formatted = template.format(
+    user_query=query,
+    data_display=data,
+    stats_info=statistics
+)
+```
+```
+
 **1. Structured Prompt Templates**:
 ```
 System Role Definition
@@ -498,6 +751,7 @@ Output Specification
 - **Examples**: Few-shot prompts for complex tasks
 - **Constraints**: Explicit DO/DON'T lists
 - **Validation**: Output format enforcement (JSON schemas)
+- **Externalization**: All prompts loaded from prompts/ folder (zero hardcoded)
 
 **3. LLM Usage by Component**:
 
@@ -512,41 +766,13 @@ Output Specification
 
 ### Conversation Memory (RAG Pattern)
 
-```
-User Query
-    │
-    ▼
-┌─────────────────────────┐
-│ Embed Query             │
-│ (sentence-transformers) │
-└──────────┬──────────────┘
-           │
-    ┌──────▼──────┐
-    │   FAISS     │  ◄───── Previous conversations
-    │ Vector DB   │         stored as embeddings
-    └──────┬──────┘
-           │
-           │ K=2 nearest
-           │ neighbors
-           ▼
-┌─────────────────────────┐
-│ RAG Context             │
-│ "Previously you asked..." │
-└──────────┬──────────────┘
-           │
-           │ Inject into prompt
-           ▼
-┌─────────────────────────┐
-│ Query Resolution +      │
-│ Historical Context      │
-└─────────────────────────┘
-```
+**Architecture**:
+1. Embed user query (sentence-transformers)
+2. Search FAISS vector DB (K=2 nearest neighbors from conversation history)
+3. Inject context: "Previously you asked..."
+4. Query Resolution uses historical context
 
-**Benefits**:
-- Maintains conversation coherence
-- Resolves ambiguous follow-up questions
-- Reduces redundant queries
-- Improves confidence scores
+**Benefits**: Conversation coherence, resolves follow-ups, reduces redundancy, improves confidence
 
 ---
 
@@ -554,46 +780,17 @@ User Query
 
 ### End-to-End Query Processing
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│ STEP 1: Data Ingestion                                       │
-├──────────────────────────────────────────────────────────────┤
-│ CSV/Excel/JSON Files                                         │
-│           │                                                   │
-│           ▼                                                   │
-│   ┌───────────────┐                                          │
-│   │ Input Loader  │  • pandas.read_csv/read_excel/read_json │
-│   └───────┬───────┘  • Data validation                       │
-│           │          • Type inference                        │
-│           ▼                                                   │
-│   ┌───────────────┐                                          │
-│   │   DuckDB      │  • CREATE TABLE AS SELECT *              │
-│   │  (In-Memory)  │  • Columnar storage                      │
-│   └───────────────┘  • Indexed for OLAP queries             │
-└──────────────────────────────────────────────────────────────┘
+**STEP 1: Data Ingestion**
+- CSV/Excel/JSON → pandas read functions
+- Data validation + type inference
+- Load into DuckDB (in-memory columnar storage, OLAP-indexed)
 
-┌──────────────────────────────────────────────────────────────┐
-│ STEP 2: Query Understanding                                  │
-├──────────────────────────────────────────────────────────────┤
-│ Natural Language Query: "What is monthly revenue trend?"     │
-│           │                                                   │
-│           ▼                                                   │
-│   ┌────────────────────┐                                     │
-│   │ Query Resolution   │  • LLM semantic understanding       │
-│   │ Agent              │  • Terminology mapping              │
-│   └────────┬───────────┘  • Confidence scoring               │
-│            │                                                  │
-│            ▼                                                  │
-│   ┌────────────────────┐                                     │
-│   │ Structured Query   │  {                                  │
-│   │ Specification      │    "groupby": ["Month"],            │
-│   └────────────────────┘    "aggregations": ["sum"],         │
-│                              "orderby": {"Month": "ASC"}     │
-│                            }                                 │
-└──────────────────────────────────────────────────────────────┘
+**STEP 2: Query Understanding**
+- Natural language → Query Resolution Agent (LLM)
+- Semantic mapping, terminology resolution
+- Output: Structured query spec with confidence score
 
-┌──────────────────────────────────────────────────────────────┐
-│ STEP 3: Data Extraction                                      │
+**STEP 3: Data Extraction**
 ├──────────────────────────────────────────────────────────────┤
 │   ┌────────────────────┐                                     │
 │   │ SQL Builder        │  • Construct optimized SQL          │
@@ -708,20 +905,17 @@ User Query
 ```
 
 #### Stage 2: Data Extraction
+
+**Generated SQL**:
 ```sql
--- Generated SQL
-SELECT 
-    Category,
-    "ship-state" as Region,
-    SUM(Amount) as Revenue,
-    COUNT(*) as OrderCount
+SELECT Category, "ship-state" as Region, SUM(Amount) as Revenue, COUNT(*) as OrderCount
 FROM sales_data
 GROUP BY Category, "ship-state"
 ORDER BY Revenue DESC
 LIMIT 20
 ```
 
-**Extracted Data** (sample):
+**Sample Results**:
 | Category | Region | Revenue | OrderCount |
 |----------|--------|---------|------------|
 | Electronics | CA | $1,245,320 | 1,523 |
@@ -729,59 +923,31 @@ LIMIT 20
 | Clothing | NY | $876,230 | 3,421 |
 
 #### Stage 3: Validation & Insights
-```
-Direct Answer:
-Electronics generates the highest total revenue at $4.2M across all regions,
-representing 35% of total sales.
 
-Regional Breakdown:
-• California leads with $1.24M in electronics (30% of category total)
-• Texas follows with $987K in Home & Kitchen (leading in that category)
-• New York shows strongest performance in Clothing ($876K, 18% of category)
+**Direct Answer**: Electronics generates highest revenue ($4.2M, 35% of total)
 
-Key Pattern:
-Top 3 categories account for 68% of total revenue. Electronics dominates
-in West Coast states, while clothing is strongest in Northeast metro areas.
+**Regional Breakdown**:
+- CA leads: $1.24M electronics (30% of category)
+- TX: $987K Home & Kitchen (category leader)
+- NY: $876K Clothing (18% of category, Northeast strong)
 
-Business Insight:
-Geographic category preferences suggest opportunity for region-specific
-inventory optimization and targeted marketing campaigns.
-```
+**Key Pattern**: Top 3 categories = 68% revenue. Electronics dominates West Coast, Clothing in Northeast.
 
-#### Stage 4: Visualization Generation
-```python
-[
-    {
-        "type": "bar_chart",
-        "title": "Revenue by Category (Top 10)",
-        "x": ["Electronics", "Home & Kitchen", "Clothing", ...],
-        "y": [4200000, 3100000, 2800000, ...]
-    },
-    {
-        "type": "heatmap",
-        "title": "Category Performance by Region",
-        "data": matrix_data,
-        "x_labels": ["CA", "TX", "NY", ...],
-        "y_labels": ["Electronics", "Home & Kitchen", ...]
-    }
-]
-```
+**Business Insight**: Geographic preferences suggest region-specific inventory + marketing opportunities.
+
+#### Stage 4: Visualization
+
+**Generates**:
+1. Bar chart: Revenue by Category (top 10)
+2. Heatmap: Category Performance × Region matrix
 
 #### Stage 5: Follow-up Suggestions
-```python
-[
-    "What is the monthly trend for electronics revenue?",
-    "Which products in electronics category are top sellers?",
-    "Compare California vs Texas performance by category",
-    "Show average order value for each category"
-]
-```
 
-**Total Processing**: ~5.2 seconds
-- Query Resolution: 1.4s
-- SQL Execution: 0.3s
-- LLM Analysis: 3.2s
-- Formatting: 0.3s
+- "What is the monthly trend for electronics revenue?"
+- "Which products in electronics category are top sellers?"
+- "Compare California vs Texas performance by category"
+
+**Processing Time**: 5.2s (Resolution: 1.4s | SQL: 0.3s | LLM: 3.2s | Format: 0.3s)
 
 ---
 
@@ -866,65 +1032,23 @@ Files (CSV) → pandas → DuckDB (in-memory) → Streamlit
 
 **Challenge**: Processing massive CSV files without OOM errors
 
-#### Solution 1: Distributed Batch Processing with PySpark
+**Solution 1: Spark (Distributed Batch)**
+- 10-node cluster processes 100GB in 10-15 minutes
+- Deduplication, filtering, date parsing
+- Output: Partitioned Parquet (Year/Month to S3)
+- **Benefits**: Parallel execution, fault tolerance, automatic partitioning
 
-```python
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
+**Solution 2: Dask (Incremental)**
+- Pandas-like API with lazy evaluation
+- 64MB chunks for memory efficiency
+- Integrates with existing pandas code
+- **Benefits**: Python-native, scales to multi-TB
 
-# Initialize Spark cluster
-spark = SparkSession.builder \
-    .appName("RetailDataIngestion") \
-    .config("spark.executor.memory", "8g") \
-    .config("spark.executor.cores", "4") \
-    .getOrCreate()
-
-# Read partitioned data from S3
-df = spark.read \
-    .option("header", "true") \
-    .option("inferSchema", "true") \
-    .csv("s3://retail-data/sales/*.csv")
-
-# Data Cleaning Pipeline
-cleaned_df = df \
-    .dropDuplicates(["Order ID"]) \
-    .filter(col("Amount") > 0) \
-    .withColumn("Date", to_date(col("Date"), "yyyy-MM-dd")) \
-    .withColumn("Month", date_trunc("month", col("Date"))) \
-    .withColumn("Year", year(col("Date"))) \
-    .fillna({"Category": "Unknown", "Status": "Pending"})
-
-# Write to optimized format (partitioned by Year/Month)
-cleaned_df.write \
-    .partitionBy("Year", "Month") \
-    .mode("overwrite") \
-    .parquet("s3://retail-data/curated/sales_partitioned")
-```
-
-**Benefits**:
-- Process 100GB in ~10-15 minutes on 10-node cluster
-- Automatic parallelization across executors
-- Fault tolerance with lineage tracking
-- Output partitioned by time for efficient filtering
-
-#### Solution 2: Incremental Processing with Dask
-
-```python
-import dask.dataframe as dd
-from dask.distributed import Client
-
-# Initialize Dask cluster
-client = Client(n_workers=8, threads_per_worker=2, memory_limit='4GB')
-
-# Read large CSV with lazy evaluation
-ddf = dd.read_csv(
-    "s3://retail-data/sales/*.csv",
-    blocksize="64MB",  # Process in 64MB chunks
-    assume_missing=True,
-    dtype={'Category': 'str', 'Amount': 'float64'}
-)
-
-# Apply transformations lazily
+**Solution 3: Streaming (Kafka → Spark → Delta)**
+- Real-time ingestion from Kafka topic
+- Spark Streaming with 10-min watermark
+- Delta Lake for ACID writes, checkpointing
+- **Benefits**: Near real-time (seconds latency), exactly-once processing
 cleaned_ddf = ddf \
     .drop_duplicates(subset=['Order ID']) \
     .query("Amount > 0") \
@@ -980,9 +1104,35 @@ query = parsed_df.writeStream \
 
 ### Data Quality Pipeline
 
-```python
-# Automated Data Quality Checks
-from great_expectations import DataContext
+**Automated checks with Great Expectations**:
+- Schema validation (column types, required fields)
+- Value ranges (Amount > 0, valid dates)
+- Referential integrity (Order IDs exist)
+- Statistical anomalies (revenue >3 std dev flagged)
+
+**Implementation**: Run checks in Airflow DAG before materializing views
+
+---
+
+## Slide 11: Query Optimization Techniques
+
+### Smart Partitioning & Indexing
+
+**Partition Strategy**: Date (Year/Month) + Cluster by Category + Region
+
+**Example**:
+```sql
+SELECT Category, SUM(Amount) as Revenue
+FROM sales_data
+WHERE Date >= '2024-01-01' AND Category = 'Electronics'
+GROUP BY Category
+```
+
+**Without optimization**: Scan 100GB = $0.50, 15s
+**With partition**: Scan 8GB (2024 only) = $0.04, 2s  
+**With cluster**: Scan 0.5GB (Electronics only) = $0.0025, 0.5s
+
+**Result: 200× cost reduction, 30× speed improvement**
 
 context = DataContext()
 
@@ -1007,115 +1157,43 @@ if not results.success:
 
 ### Multi-Tier Storage Architecture
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                     HOT TIER (Recent)                     │
-│                    Last 3 months ~5GB                     │
-├──────────────────────────────────────────────────────────┤
-│  Storage: Redis Cache + DuckDB In-Memory                 │
-│  Access: <100ms latency                                  │
-│  Use Case: Real-time dashboards, recent trends           │
-└──────────────────────────────────────────────────────────┘
-                           │
-┌──────────────────────────────────────────────────────────┐
-│                    WARM TIER (Current Year)               │
-│                    Last 12 months ~20GB                   │
-├──────────────────────────────────────────────────────────┤
-│  Storage: BigQuery / Snowflake (Columnar)                │
-│  Access: 1-5 seconds latency                             │
-│  Use Case: Ad-hoc queries, exploratory analysis          │
-└──────────────────────────────────────────────────────────┘
-                           │
-┌──────────────────────────────────────────────────────────┐
-│                  COLD TIER (Historical)                   │
-│                    2+ years ~100GB+                       │
-├──────────────────────────────────────────────────────────┤
-│  Storage: S3 Glacier / Parquet Files                     │
-│  Access: 10+ seconds latency                             │
-│  Use Case: Year-over-year comparisons, compliance        │
-└──────────────────────────────────────────────────────────┘
-```
+| Tier | Data Age | Size | Storage | Latency | Use Case |
+|------|----------|------|---------|---------|----------|
+| **Hot** | Last 3 months | ~5GB | Redis + DuckDB (in-memory) | <100ms | Real-time dashboards |
+| **Warm** | Last 12 months | ~20GB | BigQuery/Snowflake (columnar) | 1-5s | Ad-hoc queries |
+| **Cold** | 2+ years | 100GB+ | S3 Glacier / Parquet | 10+s | YoY comparisons, compliance |
 
 ### Recommended: Delta Lake on Cloud Storage
 
-**Why Delta Lake?**
-- ACID transactions on cloud object storage
+**Key Features**:
+- ACID transactions on object storage
 - Time travel (query historical versions)
-- Schema evolution without breaking changes
-- Optimized for analytics (Parquet + stats)
-- Integrates with Spark, Databricks, DuckDB
+- Schema evolution, auto-optimization
+- Parquet format with statistics
 
-```python
-# Write data to Delta Lake
-df.write \
-    .format("delta") \
-    .mode("append") \
-    .partitionBy("Year", "Month", "Category") \
-    .option("overwriteSchema", "true") \
-    .save("s3://retail-data/delta/sales")
-
-# Create optimized indexes
-spark.sql("""
-    OPTIMIZE delta.`s3://retail-data/delta/sales`
-    ZORDER BY (Category, ship-state, Date)
-""")
-
-# Maintain metadata
-spark.sql("""
-    VACUUM delta.`s3://retail-data/delta/sales`
-    RETAIN 168 HOURS  -- 7 days
-""")
-```
+**Optimization**:
+- Partition: Year/Month/Category (pruning)
+- ZORDER clustering on frequent filters
+- OPTIMIZE for compaction, VACUUM (7-day retention)
 
 ### BigQuery Implementation (Serverless)
 
-```sql
--- Create partitioned and clustered table
-CREATE TABLE retail_data.sales
-PARTITION BY DATE(Date)
-CLUSTER BY Category, `ship-state`
-AS SELECT * FROM temp_table;
+**Configuration**:
+- Partitioned by Date (auto-pruning)
+- Clustered by Category + ship-state
+- Pay-per-query (~$0.05 for 100GB with partition pruning)
 
--- Query with automatic partition pruning
-SELECT 
-    Category,
-    SUM(Amount) as Revenue
-FROM retail_data.sales
-WHERE Date >= '2024-01-01'  -- Scans only relevant partitions
-GROUP BY Category
-ORDER BY Revenue DESC;
-
--- Estimated cost: ~$0.05 for 100GB table (scans only needed partitions)
-```
-
-**Benefits**:
-- Auto-scaling compute
-- Pay per query (no idle costs)
-- Sub-second queries on TBs
-- Built-in ML capabilities
+**Benefits**: Auto-scaling, no idle costs, sub-second queries on TBs, built-in ML
 
 ### Vector Indexing for Semantic Search
 
-```python
-# Pinecone for semantic query routing
-import pinecone
+**Pinecone Strategy**:
+1. Index common queries with embeddings
+2. Store SQL translations as metadata
+3. At query time: Embed → Find similar (top_k=3, threshold >85%)
+4. If match: Return cached SQL | Else: Process with LLM
 
-pinecone.init(api_key="...", environment="us-west1-gcp")
-
-# Create index for query embeddings
-index = pinecone.Index("sales-queries")
-
-# Index common queries and their SQL translations
-for query, sql in query_library:
-    embedding = embed_model.encode(query)
-    index.upsert([(hash(query), embedding, {"sql": sql})])
-
-# At query time: find similar queries
-def get_similar_queries(user_query):
-    query_embedding = embed_model.encode(user_query)
-    results = index.query(query_embedding, top_k=3)
-    return [r['metadata']['sql'] for r in results]
-```
+**Result**: 60-80% cache hit rate, significant LLM cost reduction
 
 ---
 
@@ -1195,56 +1273,29 @@ class ScalableQueryRetriever:
             top_k=5
         )
         
-        # Step 5: Use LLM only if no match
+        # Use LLM only if no match
         if similar_queries.score > 0.9:
             return similar_queries[0].result
         else:
             return llm_query_resolution(user_query, context=similar_queries)
 ```
 
-**Benefits**:
-- **98% reduction** in data scanned
-- **80% cache hit rate** for common queries
-- **3x faster** query responses
-- **60% cost savings** on LLM API calls
+**Benefits**: 98% less data scanned | 80% cache hit rate | 3× faster | 60% LLM cost savings
 
 ### Materialized Views for Common Queries
 
+**Pre-compute daily aggregates**:
 ```sql
--- Pre-compute daily aggregates
 CREATE MATERIALIZED VIEW sales_daily_summary AS
-SELECT 
-    DATE(Date) as day,
-    Category,
-    `ship-state` as state,
-    SUM(Amount) as total_revenue,
-    COUNT(*) as order_count,
-    AVG(Amount) as avg_order_value
+SELECT DATE(Date) as day, Category, `ship-state` as state,
+       SUM(Amount) as total_revenue, COUNT(*) as order_count, AVG(Amount) as avg_order_value
 FROM sales_data
 GROUP BY day, Category, state;
-
--- User query: "What is total revenue by category this month?"
--- → Scans sales_daily_summary (10MB) instead of full table (100GB)
--- → 10,000x smaller dataset = 10,000x faster!
 ```
 
-**Auto-refresh strategy**:
-```python
-# Airflow DAG for incremental updates
-@dag(schedule_interval="@hourly")
-def refresh_materialized_views():
-    # Only process new data since last refresh
-    last_updated = get_last_refresh_timestamp()
-    
-    spark.sql(f"""
-        INSERT INTO sales_daily_summary
-        SELECT DATE(Date) as day, Category, state,
-               SUM(Amount), COUNT(*), AVG(Amount)
-        FROM sales_data
-        WHERE Date >= '{last_updated}'
-        GROUP BY day, Category, state
-    """)
-```
+**Result**: Query "total revenue by category this month" scans 10MB view vs 100GB table (10,000× faster)
+
+**Auto-refresh**: Airflow DAG runs hourly, processes only new data since last refresh
 
 ---
 
@@ -1252,7 +1303,7 @@ def refresh_materialized_views():
 
 ### Handling High Query Volumes
 
-**Problem**: 1000 concurrent users × 5 second LLM latency = bottleneck
+**Problem**: 1000 concurrent users × 5s LLM latency = bottleneck
 
 **Solution**: Async Processing + Load Balancing
 
@@ -1289,72 +1340,32 @@ def refresh_materialized_views():
 
 ### Cost Optimization Strategies
 
-**1. Prompt Caching**
-```python
-# Cache LLM responses for identical queries
-import hashlib
-import redis
+**1. Prompt Caching (Redis)**
 
-cache = redis.Redis(host='localhost', port=6379)
+**Strategy**: Hash prompt → Check cache → Return if hit → Else call LLM + cache result (TTL: 1hr)
 
-def cached_llm_call(prompt, model="gemini-pro"):
-    # Generate cache key from prompt
-    cache_key = hashlib.md5(prompt.encode()).hexdigest()
-    
-    # Check cache first
-    cached_response = cache.get(cache_key)
-    if cached_response:
-        return cached_response.decode()
-    
-    # Call LLM if cache miss
-    response = llm.invoke(prompt)
-    
-    # Cache for 1 hour
-    cache.setex(cache_key, 3600, response.content)
-    
-    return response.content
-```
+**Implementation**: MD5 hash as cache key, store response in Redis
 
 **Savings**: 70% reduction in API calls for repeated queries
 
-**2. Model Tiering**
-```python
-# Use cheaper models for simple queries
-def select_model(query_complexity):
-    if query_complexity < 0.3:
-        # Simple lookup → use small model
-        return ChatOpenAI(model="gpt-3.5-turbo")  # $0.0015/1K tokens
-    elif query_complexity < 0.7:
-        # Moderate analysis → use standard model
-        return ChatGoogleGenerativeAI(model="gemini-pro")  # $0.00025/1K tokens
-    else:
-        # Complex reasoning → use advanced model
-        return ChatOpenAI(model="gpt-4")  # $0.03/1K tokens
-```
+**2. Model Tiering (Route by Complexity)**
+
+**Strategy**: Analyze query complexity → Route to appropriate model tier
+
+**Tiers**:
+- Simple lookups (<0.3): GPT-3.5-Turbo ($0.0015/1K tokens)
+- Moderate analysis (0.3-0.7): Gemini Pro ($0.00025/1K tokens)
+- Complex reasoning (>0.7): GPT-4 ($0.03/1K tokens)
 
 **Savings**: 60% reduction in API costs
 
 **3. Batch Processing**
-```python
-# Process multiple queries in single LLM call
-queries = [
-    "Total revenue?",
-    "Order count?",
-    "Average order value?"
-]
 
-batch_prompt = f"""
-Answer these queries using the provided data:
-{json.dumps(queries)}
+**Strategy**: Combine multiple queries into single LLM call, parse JSON array response
 
-Return JSON array of answers.
-"""
+**Use Cases**: Dashboard rendering (10 charts), report generation (multiple metrics)
 
-response = llm.invoke(batch_prompt)
-answers = json.loads(response.content)
-```
-
-**Savings**: 70% reduction in API calls for multi-question chats
+**Savings**: 70% reduction in API calls for multi-question scenarios
 
 ### SLA Targets for Production
 
@@ -1397,80 +1408,37 @@ answers = json.loads(response.content)
 ### Key Metrics to Track
 
 **1. Query Performance**
-```python
-# Instrument LangGraph nodes
-import time
-from prometheus_client import Histogram
 
-query_latency = Histogram(
-    'query_processing_seconds',
-    'Time spent processing query',
-    ['node', 'query_type']
-)
-
-@query_latency.labels(node='data_extraction', query_type='analytical').time()
-def extract_data(query_spec):
-    # ... extraction logic
-    pass
-```
+**Instrumentation**: Prometheus Histogram decorators on LangGraph nodes
 
 **Metrics**:
-- Query latency (p50, p95, p99)
+- Query latency (p50, p95, p99) per node
 - Node processing time breakdown
 - SQL execution time
 - LLM API latency
 
-**2. LLM Performance**
-```python
-# Track LLM metrics
-llm_requests = Counter('llm_requests_total', ['model', 'status'])
-llm_tokens = Histogram('llm_tokens_used', ['model', 'direction'])
-llm_cost = Counter('llm_cost_dollars', ['model'])
+**Alerts**: Latency >10s, error rate >5%
 
-def tracked_llm_call(prompt, model="gemini-pro"):
-    start = time.time()
-    
-    try:
-        response = llm.invoke(prompt)
-        llm_requests.labels(model=model, status='success').inc()
-        llm_tokens.labels(model=model, direction='input').observe(len(prompt.split()))
-        llm_tokens.labels(model=model, direction='output').observe(len(response.content.split()))
-        
-        # Cost calculation
-        cost = calculate_cost(model, prompt, response)
-        llm_cost.labels(model=model).inc(cost)
-        
-        return response
-    except Exception as e:
-        llm_requests.labels(model=model, status='error').inc()
-        raise
-```
+**2. LLM Performance**
+
+**Instrumentation**: Counter + Histogram wrappers on llm.invoke() calls
 
 **Metrics**:
-- API call success/failure rate
-- Token usage (input/output)
-- Cost per query
-- Model selection distribution
+- API call success/failure rate by model
+- Token usage (input/output) per model
+- Cost per query and daily totals
+- Model selection distribution (tiering effectiveness)
+
+**Alerts**: Cost spike >$50/day, error rate >10%
 
 **3. Data Quality**
-```python
-# Monitor data freshness and quality
-data_freshness = Gauge('data_last_updated_timestamp', 'Last data update')
-data_quality_score = Gauge('data_quality_score', 'Overall quality', ['table'])
-missing_data_pct = Gauge('missing_data_percentage', 'Missing values', ['table', 'column'])
 
-def monitor_data_quality(table_name):
-    df = load_table(table_name)
-    
-    # Freshness
-    max_date = df['Date'].max()
-    data_freshness.set(max_date.timestamp())
-    
-    # Quality score
-    completeness = (1 - df.isnull().sum().sum() / df.size)
-    duplicates = df.duplicated().sum() / len(df)
-    quality = (completeness * 0.7) + ((1 - duplicates) * 0.3)
-    data_quality_score.labels(table=table_name).set(quality)
+**Instrumentation**: Scheduled checks on data freshness and completeness
+
+**Metrics**:
+- Data freshness (last updated timestamp)
+- Quality score = (completeness × 0.7) + ((1 - duplicates) × 0.3)
+- Missing data percentage per table/column
 ```
 
 **Metrics**:
@@ -1545,43 +1513,46 @@ def render_response(response):
 
 ### Cost Breakdown (Monthly Estimates)
 
-**Current Implementation (<10GB)**:
-```
-LLM API Calls:
-  • 10,000 queries/month
-  • Avg 1,000 tokens per query (input + output)
-  • Gemini Pro: $0.00025 per 1K tokens
-  • Cost: $2.50/month
+**Current (<10GB)**: $33/month
+- LLM API: $2.50 (10K queries, Gemini Pro)
+- Compute: $30 (EC2 t3.medium)
+- Storage: $0 (in-memory)
 
-Compute:
-  • Single EC2 t3.medium instance
-  • Cost: $30/month
+**Production (100GB+)**: $432/month
+- Storage: $14.20 (BigQuery $5, S3 $9.20)
+- Compute: $235 (BigQuery $5, Kubernetes $210, DuckDB $20)
+- LLM API: $25 (100K queries, 70% cache hit → 30K calls @ Gemini Pro)
+- Caching/Indexing: $155 (Redis $85, Pinecone $70)
+- Monitoring: $50 (CloudWatch/Grafana/ALB)
 
-Storage:
-  • DuckDB in-memory (ephemeral)
-  • Cost: $0
+**Key Optimizations**:
+| Optimization | Savings/Month |
+|-------------|---------------|
+| Prompt caching (70% hit rate) | $242 |
+| Partitioning (90% less scan) | $45 |
+| Materialized views | $35 |
+| Model tiering (Gemini vs GPT-4) | $150 |
+| Auto-scaling (3-10 pods vs fixed 10) | $990 |
 
-Total: ~$33/month
-```
+**ROI**: Without optimizations = $1,895/month → With optimizations = $432/month (**77% savings**)
 
-**100GB+ Production Scale**:
-```
-Data Storage (BigQuery):
-  • 100GB active (hot tier)
-  • 400GB cold tier (S3 Standard)
-  • BigQuery: $5/month (storage)
-  • S3: $9.20/month (storage)
-  • Subtotal: $14.20/month
+### Performance Targets
 
-Compute (Queries):
-  • BigQuery: 1TB scanned/month
-  • Cost: $5/TB = $5/month
-  • DuckDB cloud: 100 compute hours
-  • Cost: $20/month
-  • Subtotal: $25/month
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Availability | 99.9% | Max 43 min downtime/month |
+| Latency (p95) | <3s | 95% queries |
+| Throughput | 100 queries/sec | Peak load (1000+ users) |
+| Accuracy | >90% | Weekly eval |
+| Cache hit rate | >80% | Cost efficiency |
 
-LLM API (100K queries/month):
-  • With 70% cache hit rate: 30K actual calls
+---
+
+## Slide 15: Future Enhancements
+
+### Planned Capabilities
+
+**Enhanced Analytics**
   • Cost: $7.50/month (vs $25 without cache)
 
 Vector Store (Pinecone):

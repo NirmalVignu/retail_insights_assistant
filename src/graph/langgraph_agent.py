@@ -18,7 +18,7 @@ except ImportError:
 
 from .enhanced_query_resolution import EnhancedQueryResolutionAgent
 from ..utils.response_formatter import ResponseFormatter
-from ..utils.prompt_loader import format_prompt
+from ..utils.prompt_loader import format_prompt, load_prompt
 import logging
 import json
 import pandas as pd
@@ -174,25 +174,9 @@ class LangGraphQueryAgent:
         logger.info(f"LangGraph: Decomposing query type: {query_type}")
         if query_type in ["comparison", "timeseries", "custom"]:
             try:
+                decomposition_prompt = load_prompt("query_decomposition_prompt")
                 messages = [
-                    SystemMessage(content="""You are a query decomposition specialist. Break complex business questions into logical, sequential sub-queries.
-
-DECOMPOSITION STRATEGY:
-1. Identify required data sources
-2. Determine calculation dependencies
-3. Order queries from foundational to derived
-4. Ensure each sub-query is independently executable
-5. Each sub-query should answer one specific aspect
-
-EXAMPLE:
-"Compare Q1 vs Q2 revenue by category" → 
-[
-  "What is the total revenue by category in Q1?",
-  "What is the total revenue by category in Q2?", 
-  "Calculate the difference and percentage change"
-]
-
-RETURN: JSON array of simple, executable sub-queries in logical order."""),
+                    SystemMessage(content=decomposition_prompt),
                     HumanMessage(content=f"Decompose this complex query into simple sub-queries:\n\n{analysis.get('parsed_intent')}\n\nReturn ONLY a JSON array of strings.")
                 ]
                 response = self.llm.invoke(messages)
@@ -294,41 +278,16 @@ RETURN: JSON array of simple, executable sub-queries in logical order."""),
                 data_size_info = "Query Results:"
                 stats_info = ""
             
-            insight_prompt = f"""You are a senior retail analytics expert. Analyze the data below and answer the user's question with REAL NUMBERS from the data.
-
-USER'S QUESTION:
-{user_query}
-
-DATA RESULTS ({data_size_info}):
-{data_display}{stats_info}
-
-Query Configuration:
-- Aggregations: {analysis.get('aggregations', [])}
-- Grouped by: {analysis.get('groupby', [])}
-- Ordered by: {analysis.get('orderby', {})}
-
-INSTRUCTIONS:
-
-1. DIRECT ANSWER (1-2 sentences):
-   - Answer their exact question with the ACTUAL numbers from the data above
-   - Example: "Electronics generates the highest total with $45,230.50"
-   - Use the PRIMARY metric they asked about
-
-2. KEY FINDINGS (3-4 bullet points):
-   - State the top 3-5 values with their ACTUAL numbers from the data
-   - Calculate differences and percentages using the real data
-   - Example: "Electronics ($45,230) leads, followed by Home & Kitchen ($32,150)"
-
-3. BUSINESS INSIGHT (1 sentence):
-   - What action or opportunity does this suggest?
-
-CRITICAL RULES:
-- Use ONLY the actual numbers visible in the data above
-- NEVER use placeholder variables like X, Y, Z, or generic descriptions
-- Every statement must include a specific number from the dataset
-- If you cannot see a number in the data, say "Data not available" for that specific item
-
-Answer using the real values you see in the data:"""
+            llm_analysis_template = load_prompt("llm_analysis_prompt")
+            insight_prompt = llm_analysis_template.format(
+                user_query=user_query,
+                data_size_info=data_size_info,
+                data_display=data_display,
+                stats_info=stats_info,
+                aggregations=analysis.get('aggregations', []),
+                groupby=analysis.get('groupby', []),
+                orderby=analysis.get('orderby', {})
+            )
             
             messages = [
                 SystemMessage(content=insight_prompt)

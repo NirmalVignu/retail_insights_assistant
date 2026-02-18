@@ -47,6 +47,7 @@ retail_insights_assistant/
 │   ├── validation_analyst_prompt.txt     # Result validation
 │   ├── data_analyst_prompt.txt           # Statistical analysis
 │   ├── summarization_prompt.txt          # Business reports
+│   ├── comparative_summarization_prompt.txt  # Multi-table comparison
 │   └── comparison_prompt.txt             # Table comparison
 │
 ├── docs/                          # Documentation
@@ -139,6 +140,205 @@ prompt = format_prompt(
     context_part=previous_conversation
 )
 ```
+
+---
+
+## 🖥️ Streamlit UI - Complete Tab Guide
+
+The application has **4 interactive tabs**, each serving a distinct purpose in the analytics workflow.
+
+### Tab 1: 📈 Automated Data Summarization
+
+**Purpose**: Generate comprehensive business intelligence reports from loaded datasets.
+
+**Features**:
+- **Single Table Summary**:
+  - Executive summary with key metrics
+  - Quantified insights (actual numbers, no placeholders)
+  - Top categories/products with revenue breakdown
+  - Trend analysis with growth rates
+  - Strategic recommendations based on data patterns
+  
+- **Comparative Analysis**:
+  - Side-by-side comparison of two datasets
+  - Dimensional overlap analysis
+  - Integration opportunities identification
+  - Data consolidation roadmap
+  
+- **PDF Export**: Download generated reports as professional PDF documents
+
+**Typical Use Cases**:
+- Generate monthly performance reports
+- Compare sales across different time periods
+- Analyze multiple data sources for integration planning
+
+**Technology**: Uses `SummarizationEngine` with external prompts for consistent, high-quality reports.
+
+---
+
+### Tab 2: 💬 Conversational Q&A
+
+**Purpose**: Ask natural language questions about your data and get instant, accurate answers.
+
+**Dual Agent Architecture**:
+
+#### 🧠 **LangGraph Agent** (Advanced Mode)
+**Best for**: Complex, multi-step queries requiring reasoning
+
+**Architecture**: 7-node state machine workflow
+- Node 1: `analyze_query` - Parse user intent
+- Node 2: `decompose_query` - Break complex questions into sub-queries
+- Node 3: `extract_data` - Execute SQL and fetch results
+- Node 4: `validate_results` - Quality checks and routing
+- Node 5: `refine_query` - Optimize SQL if needed (max 2 retries)
+- Node 6: `llm_analysis` - Generate insights from data
+- Node 7: `format_response` - Structure final answer
+
+**Use When**: 
+- Comparing multiple time periods or categories
+- Questions requiring multi-step calculations
+- Trend analysis with pattern detection
+- Queries needing error recovery
+
+**Example Questions**:
+- "Compare sales trends between Electronics and Home categories over Q1 and Q2"
+- "What's the correlation between discount rates and sales volume by region?"
+- "Show me products with declining sales but increasing returns"
+
+#### 🤖 **Multi-Agent Orchestrator** (Fast Mode)
+**Best for**: Simple, direct aggregation queries
+
+**Architecture**: 4-agent linear pipeline
+- Agent 1: `QueryResolutionAgent` - NLP to SQL mapping
+- Agent 2: `DataExtractionAgent` - Query execution
+- Agent 3: `ValidationAgent` - Result verification
+- Agent 4: `DataAnalystAgent` - Statistical analysis
+
+**Use When**:
+- Quick metrics lookup (totals, averages, counts)
+- Dashboard-style queries
+- Simple filtering and grouping
+
+**Example Questions**:
+- "What is the total revenue by category?"
+- "Which city has the highest order volume?"
+- "Show me top 10 products by sales"
+- "What's the average order value in May?"
+
+#### **Common Features** (Both Agents):
+- ✅ Confidence scoring (0.0-1.0) for every answer
+- ✅ Conversation memory with FAISS + RAG
+- ✅ Suggested follow-up questions
+- ✅ Auto-generated visualizations (charts, tables)
+- ✅ Real numeric values (no placeholder variables)
+- ✅ Data source selection (query specific tables or all tables)
+- ✅ Clear conversation history option
+
+**Technology**: 
+- LangGraph: `src/graph/langgraph_agent.py` with external prompts
+- Multi-Agent: `src/agents/multi_agent.py` with 4 specialized agents
+- Memory: FAISS vector store for semantic conversation search
+
+---
+
+### Tab 3: 📋 Data Explorer
+
+**Purpose**: Quick, AI-free exploration and inspection of loaded datasets.
+
+**Features**:
+1. **Table Selection**: Dropdown to choose any loaded table
+2. **Metadata Display**:
+   - Total row count
+   - Total column count
+   - Table name and file source
+3. **Data Preview**:
+   - First 100 rows displayed in interactive table
+   - Sortable columns
+   - Scrollable view
+4. **Column Profiling**:
+   - Column names list
+   - Data types for each column
+   - Missing value indicators
+5. **Basic Statistics**:
+   - Numeric column ranges (min/max)
+   - Record counts
+   - Data completeness overview
+
+**Typical Use Cases**:
+- Verify data loaded correctly
+- Quick sanity checks before analysis
+- Understand data structure and column names
+- Spot obvious data quality issues
+
+**Technology**: Direct DuckDB queries via `DataProcessor`, no LLM calls (fast and free).
+
+**Sub-tabs**:
+- **Data View**: Raw data table display
+- **Visualizations**: Quick charts (distributions, time series)
+- **Analytics**: Basic aggregations and groupings
+
+---
+
+### Tab 4: 🔬 Data Analyst
+
+**Purpose**: Professional, comprehensive statistical analysis and data quality assessment.
+
+**Features**:
+1. **Executive Overview**:
+   - Business domain identification
+   - Data maturity assessment
+   - Dataset complexity scoring
+   - Recommended analysis depth
+
+2. **Statistical Findings**:
+   - Distribution analysis for all numeric columns
+   - Range analysis (min, max, median, quartiles)
+   - Variability metrics (standard deviation, coefficient of variation)
+   - Correlation detection between numeric fields
+
+3. **Data Quality Assessment**:
+   - Completeness score (% of non-null values)
+   - Duplicate detection
+   - Consistency checks
+   - Missing value patterns
+
+4. **Anomaly Detection**:
+   - **Critical**: Outliers requiring immediate attention (>3 std dev)
+   - **Moderate**: Notable deviations (2-3 std dev)
+   - **Minor**: Slight variations (1-2 std dev)
+   - Impact assessment for each anomaly
+
+5. **Categorical Insights**:
+   - Top categories by frequency
+   - Category distribution (concentration vs diversity)
+   - Rare category identification
+   - Category completeness
+
+6. **Actionable Recommendations**:
+   - Prioritized action items (High/Medium/Low)
+   - Data cleaning suggestions
+   - Analysis opportunities
+   - Integration considerations
+
+**Interactive Visualizations** (4 sub-tabs):
+- **Distributions**: Histograms for all numeric columns
+- **Categories**: Bar charts for categorical breakdowns
+- **Correlation Matrix**: Heatmap showing variable relationships
+- **Box Plots**: Outlier visualization and quartile ranges
+
+**Typical Use Cases**:
+- Pre-analysis data profiling
+- Data quality audits
+- Identifying data preparation needs
+- Spotting unusual patterns or errors
+
+**Technology**: 
+- Statistical analysis via pandas + DuckDB aggregations
+- Visualization with Plotly interactive charts
+- Uses `DataAnalystAgent` in `src/agents/multi_agent.py`
+- Driven by `data_analyst_prompt.txt` for consistent professional reporting
+
+---
 
 ## 📝 Usage Examples
 

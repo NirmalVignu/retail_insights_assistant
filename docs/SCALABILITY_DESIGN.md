@@ -195,9 +195,48 @@ graph LR
 
 ## B. Storage & Indexing
 
-### The Storage Challenge
+### Production Storage Strategy
 
-**Prototype approach** (doesn't scale):
+**Prototype**: All data in memory (doesn't scale beyond 10GB)
+
+**Production**: Cloud warehouse with smart indexing (handles 100GB+ efficiently)
+
+---
+
+### 1. Cloud Data Warehouse - BigQuery (Recommended)
+
+**Why BigQuery?**
+- Serverless (no cluster management)
+- Auto-scaling compute
+- Pay-per-query (no idle costs)
+- Sub-second queries on TBs
+- Built-in ML capabilities
+
+**Cost Model**:
+- Storage: $0.02/GB/month (active), $0.01/GB/month (long-term)
+- Queries: $5 per TB scanned
+- No compute charges when idle
+
+**The Power of Partitioning**:
+
+Without partitioning:
+- Query scans entire 100GB table = $0.50 cost, 15s latency
+
+With partitioning (by Date):
+- Query scans only relevant partitions (8GB) = $0.04 cost, 2s latency
+- **Savings: 92% reduction in data scanned**
+
+**Clustering** (multi-column optimization):
+- Partition by Date (time-based filtering)
+- Cluster by Category + State (additional filters)
+- Result: Scan 0.5GB instead of 100GB = 99.5% reduction
+- **Cost**: $0.50 → $0.0025 per query (200× cheaper)
+
+---
+
+### 2. Data Lake with Delta Lake (Alternative)
+
+**When to Use**:\n\n| Choose Data Lake | Choose Data Warehouse |\n|------------------|----------------------|\n| Need raw log files | Structured tables only |\n| ACID transactions required | Append-only OK |\n| Time-travel queries needed | Current state only |\n| Avoid vendor lock-in | Prefer managed service |\n\n**Delta Lake Features**:\n- ACID transactions (no data corruption)\n- Time travel (query historical versions)\n- Upserts (late-arriving data handling)\n- Integration with Spark/Databricks\n\n**Cost**: $0.02/GB storage + compute costs (cheaper than BigQuery for infrequent access)
 ```
 All data in memory → Query scans everything → Slow + Expensive
 ```
@@ -298,47 +337,18 @@ WHERE Date = '2024-01-15'
 
 ### 2. Data Lake with Delta Lake (Alternative)
 
-#### When to Use Data Lake vs Data Warehouse
-
 | Choose Data Lake (S3 + Delta) | Choose Data Warehouse (BigQuery) |
 |-------------------------------|-----------------------------------|
-| Need to store raw log files | Structured tabular data only |
-| Want ACID transactions | Simple append-only operations OK |
-| Need time-travel (query history) | Only need current state |
-| Want to avoid vendor lock-in | Prefer managed service |
-| **Cost**: Cheaper storage ($0.02/GB) | **Performance**: Faster queries |
+| Raw log files, unstructured data | Structured tables only |
+| ACID transactions required | Append-only OK |
+| Time-travel queries needed | Current state sufficient |
+| Avoid vendor lock-in | Prefer managed service |
+| **Cost**: $0.02/GB (cheaper storage) | **Performance**: Faster queries |
 
-#### Delta Lake's Killer Features
-
-**1. ACID Transactions**
-- **Problem**: Two processes write to same file → corrupted data
-- **Solution**: Delta Lake ensures writes never conflict → data always consistent
-
-**2. Time Travel**
-- **Problem**: "Yesterday's revenue report was correct. Today it's wrong. What changed?"
-- **Solution**: Query any historical version:
-  ```sql
-  -- See data as it was last week
-  SELECT * FROM sales VERSION AS OF '2024-02-08'
-  
-  -- See data as it was before bad upload
-  SELECT * FROM sales VERSION AS OF 12345
-  ```
-
-**3. Upserts (Update + Insert)**
-- **Problem**: Late-arriving data or corrections
-- **Solution**: Merge new data without rebuilding entire table
-  - If Order ID exists → UPDATE
-  - If Order ID new → INSERT
-  - Result: Keeps history + handles corrections
-
-**Use Case Example**:
-```
-Monday: Upload sales data → 10,000 orders
-Tuesday: Discover 500 orders had wrong amounts
-Wednesday: Upload corrections → Delta Lake updates those 500, keeps 9,500 unchanged
-Thursday: Analyst queries Monday's version for audit → Time travel shows original
-```
+**Delta Lake Key Features**:
+1. **ACID Transactions**: Prevents data corruption from concurrent writes
+2. **Time Travel**: Query historical versions (`VERSION AS OF '2024-02-08'`)
+3. **Upserts**: Update existing + insert new in single operation (handles corrections)
 
 ---
 
@@ -346,107 +356,44 @@ Thursday: Analyst queries Monday's version for audit → Time travel shows origi
 
 #### The Problem: Repetitive Similar Queries
 
-**Scenario**:
-- User 1: "What were Electronics sales last month?"
-- User 2: "Show me revenue for Electronics in January 2024"
-- User 3: "How much did we make selling electronics in Jan?"
+**Scenario**: Multiple users ask semantically identical questions with different wording.
 
 **Without caching**: Each query calls LLM + database = 3× cost + 3× latency
 
-**With semantic search**: Recognize these are **the same question** → Reuse first answer
+**With semantic search**: Recognize similar questions → Reuse cached answers
 
-#### How Vector Search Works
+**Implementation**:
+1. Embed queries as vectors (sentence-transformers)
+2. Store query + SQL pairs in Pinecone
+3. New query: Embed → Search similar (>85% similarity) → Return cached if found
 
-**Conceptual Explanation**:
-
-1. **Embed Queries**: Convert text to mathematical "meaning" vector
-   - "Electronics sales January" → [0.2, 0.8, 0.3, ...] (384 numbers)
-   - "Electronics revenue Jan" → [0.21, 0.79, 0.31, ...] (very similar!)
-
-2. **Store Past Queries**: Save query + answer pairs in vector database (Pinecone)
-
-3. **Find Similar**: When new query comes:
-   - Convert to vector
-   - Search for similar vectors (cosine similarity >85%)
-   - If found: Return cached answer (0.5 seconds ✅)
-   - If not found: Process normally (5 seconds)
-
-**Performance Impact**:
-
-| Metric | Without Vector Search | With Vector Search | Improvement |
-|--------|----------------------|-------------------|-------------|
-| Cache Hit Rate | 0% | 60-80% | ∞ |
-| Avg Latency | 5 seconds | 1.5 seconds | 3.3x faster |
-| LLM API Calls | 100,000/month | 20,000/month | 80% reduction |
-| Monthly Cost | $250 | $50 + $70 (Pinecone) | $130 savings |
-
-**ROI**: Pay $70/month for Pinecone, save $200/month in LLM costs = **Net gain $130/month**
+**Performance**:
+- Cache hit rate: 60-80%
+- Avg latency: 1.5s (vs 5s without caching) = 3.3× faster
+- LLM calls: 20K/month (vs 100K) = 80% reduction
+- Cost: $120/month (vs $250) = $130 savings
+- ROI: Pay $70/month Pinecone, save $200/month LLM = Net gain $130/month
 
 ---
 
 ## C. Retrieval & Query Efficiency
 
-### The Query Lifecycle: 4-Tier Resolution System
+### 4-Tier Query Resolution System
 
-Most applications do this:
-```
-User Query → LLM → Database → Return Result
-(Always slow and expensive)
-```
+**Naive approach**: User Query → LLM → Database → Return (always slow)
 
-Smart production system does this:
-```
-User Query → Try Cache → Try Semantic Match → Try Metadata Filter → Full LLM
-(Fast path for 90% of queries)
-```
+**Smart approach**: Try Cache → Try Semantic Match → Try Metadata Filter → Full LLM (fast path for 90%)
 
----
+**Tier Breakdown**:
 
-### 1. Smart Query Router - The Decision Tree
+| Tier | Technology | Latency | Cost | Hit Rate | Use Case |
+|------|-----------|---------|------|----------|----------|
+| 1 | Redis (exact match) | 0.05s | $0.0001 | 20% | Identical query text |
+| 2 | Pinecone (semantic) | 0.5s | $0.001 | 50-60% | Similar meaning |
+| 3 | Metadata routing | 2s | $0.01 | 20% | Pattern extraction |
+| 4 | Full LLM | 5s | $0.025 | 10-20% | Complex reasoning |
 
-#### Tier 1: Exact Cache (Redis) - Fastest Path ⚡
-
-**When**: Identical query asked before (exact text match)
-**Latency**: 0.05 seconds (50 milliseconds)
-**Cost**: $0.0001 per query
-**Hit Rate**: 20% of queries
-
-**Example**:
-```
-Query: "Total revenue last month"
-Cache Key: MD5("Total revenue last month") = "a3f4b2..."
-Redis: GET a3f4b2... → [Cached JSON result]
-Result: Skip LLM, skip database → Instant response
-```
-
----
-
-#### Tier 2: Semantic Match (Pinecone) - Fast Path 🚀
-
-**When**: Similar question asked before (different words, same meaning)
-**Latency**: 0.5 seconds
-**Cost**: $0.001 per query
-**Hit Rate**: 50-60% of remaining queries
-
-**Example**:
-```
-Cached Query: "What was total revenue in January 2024?"
-New Query: "Show me sales for Jan 2024"
-
-System: These are 87% similar → Reuse old answer with minor adaptation
-Result: Skip LLM, skip full database scan
-```
-
----
-
-#### Tier 3: Metadata-Based Routing - Medium Path 📊
-
-**When**: Can extract filters without LLM (dates, categories, regions)
-**Latency**: 2 seconds
-**Cost**: $0.01 per query
-**Hit Rate**: 20% of remaining queries
-
-**How It Works**:
+**Performance**: 80% cache hit rate, 0.15s average latency (vs 5s without caching) = 33× faster
 
 **Without Metadata Extraction** (Slow):
 ```
@@ -496,27 +443,14 @@ User: "Show Electronics sales in California for Q1 2024"
 
 ### 2. Materialized Views - Pre-Computed Aggregations
 
-#### The Concept
+**Concept**: Pre-compute common aggregations instead of recalculating every query.
 
-Instead of calculating "total revenue per category per day" **every time someone asks**, calculate it **once per hour** and save results.
+**Performance**:
+- Without: 10B rows aggregation = 30s per query
+- With MV: Lookup pre-computed result = 0.3s per query
+- **100 users asking same query**: 50 min → 30s (100× faster)
 
-**Visual Analogy**:
-
-```
-BAD (Compute on-demand):
-User asks "Monthly revenue?" → Count 10 billion rows → 30 seconds → Return answer
-100 users ask same thing → 100× counting 10 billion rows → 50 minutes total
-
-GOOD (Materialized view):
-System pre-computes "Monthly revenue" every hour → Saves table
-User asks → Lookup pre-computed table → 0.3 seconds → Return answer
-100 users → 100× lookup → 30 seconds total
-→ 100x faster!
-```
-
-#### Layered Materialization Strategy
-
-Create views at multiple time granularities:
+**Layered Materialization**:
 
 | View Level | Refresh Frequency | Size | Query Time | Use Case |
 |------------|------------------|------|------------|----------|
@@ -525,81 +459,37 @@ Create views at multiple time granularities:
 | **Monthly** | Daily | 100MB | 0.1s | Reports, forecasting |
 | **Annual** | Weekly | 10MB | 0.05s | YoY comparisons |
 
-**Smart Routing Logic**:
-```
-Query: "Sales last week"
-→ Time span: 7 days
-→ Route to: daily_aggregate view (1GB)
-→ Only sum 7 rows instead of scanning 100GB!
+**Smart Routing**:
+- "Sales last week" → daily_aggregate (7 rows vs 100GB scan)
+- "Sales last 2 hours" → hourly_aggregate (real-time)
+- "YoY revenue growth" → annual_aggregate (instant)
 
-Query: "Sales last 2 hours"
-→ Time span: 2 hours
-→ Route to: hourly_aggregate view (10GB)
-→ Critical for real-time dashboards
-
-Query: "YoY revenue growth"
-→ Time span: Multiple years
-→ Route to: annual_aggregate view (10MB)
-→ Instant response
-```
-
-**Cost Comparison**:
-
-| Query Pattern | Raw Table (100GB) | Materialized View | Savings |
-|---------------|------------------|-------------------|---------|
-| Daily total | $0.50 (scan all) | $0.005 (1GB view) | 99% |
-| Monthly trend | $0.50 | $0.0005 (100MB view) | 99.9% |
-| **1000 queries** | **$500** | **$5** | **$495 saved** |
-
-**View Storage Cost**: $0.50/month for all views
-**Query Savings**: $495/month
-**ROI**: 990× return on investment! 🚀
+**ROI**:
+- View storage cost: $0.50/month
+- Query savings: $495/month (1000 queries: $500 → $5)
+- **Return: 990×**
 
 ---
 
 ### 3. Multi-Tier Caching Architecture
 
-#### Caching Levels (Like CPU Cache)
-
-Think of computer memory hierarchy:
-- L1 Cache (fastest, smallest)
-- L2 Cache (fast, medium)
-- L3 Cache (medium, larger)
-- RAM (slower, large)
-- Disk (slowest, huge)
-
-Apply same concept to query caching:
+**Strategy**: Layer caches from fastest/smallest to slowest/largest (similar to CPU cache hierarchy).
 
 | Tier | Technology | Latency | Capacity | Hit Rate | Use Case |
 |------|-----------|---------|----------|----------|----------|
-| **L1** | Python dict (in-memory) | 0.001s | 100 MB | 20% | Repeated queries in same session |
-| **L2** | Redis (shared) | 0.05s | 10 GB | 50% | Common queries across all users |
-| **L3** | DuckDB local | 0.5s | 100 GB | 10% | Large aggregate results |
-| **Database** | BigQuery | 2-5s | 100 TB | (source of truth) | Cache miss → Full query |
+| **L1** | Python dict (in-memory) | 0.001s | 100 MB | 20% | Session queries |
+| **L2** | Redis (shared) | 0.05s | 10 GB | 50% | Cross-user common queries |
+| **L3** | DuckDB local | 0.5s | 100 GB | 10% | Large aggregates |
+| **Database** | BigQuery | 2-5s | 100 TB | N/A | Source of truth (cache miss) |
 
-#### Query Flow Example
+**Query Flow**:
+1. Check L1 (Python dict) → Miss
+2. Check L2 (Redis) → **Hit!** Return in 0.05s
+3. Store in L1 for this session (next time: 0.001s)
 
-```
-User Query: "Revenue last month"
+**On cache miss**: Query DB (5s) → Cache in all tiers
 
-Step 1: Check L1 (Python dict)
-→ Miss (not in this user's session recently)
-
-Step 2: Check L2 (Redis)
-→ HIT! (another user asked 10 minutes ago)
-→ Return cached result (0.05s total)
-→ Also store in L1 for this user
-→ Next time this user asks: 0.001s (L1 hit)
-
-Alternative Flow (Cache Miss):
-→ L1 Miss → L2 Miss → L3 Miss
-→ Query Database (5s)
-→ Cache result in all tiers for future
-```
-
-**Combined Performance**:
-
-| Scenario | Latency | Frequency |
+**Performance**:
 |----------|---------|-----------|
 | L1 Hit | 0.001s | 20% of queries |
 | L2 Hit | 0.05s | 50% of queries |
@@ -633,157 +523,80 @@ Load Balancer → Distributes to 3-10 app instances
 
 ### 1. Kubernetes Auto-Scaling
 
-#### The Problem: Variable Load
+#### Variable Load Challenge
 
-Real-world traffic pattern:
-```
-Night (12am-6am): 5 queries/hour → Need 1 server
-Morning (9am-11am): 500 queries/hour → Need 5 servers
-Lunch (12pm-2pm): 2000 queries/hour → Need 10 servers
-Afternoon (3pm-5pm): 300 queries/hour → Need 3 servers
-```
+**Traffic Pattern**:
+- Night: 5 queries/hr → 1 server
+- Morning: 500 queries/hr → 5 servers  
+- Lunch: 2000 queries/hr → 10 servers
+- Afternoon: 300 queries/hr → 3 servers
 
-**Without Auto-Scaling** (Wasteful):
-- Provision for peak load (10 servers) 24/7
-- Cost: $180/month × 10 = $1,800/month
-- Utilization: 30% average (wasted $1,200/month)
+**Without Auto-Scaling**: 10 servers × 24/7 = $1,800/month (30% utilization → waste $1,200)
 
-**With Auto-Scaling** (Efficient):
-- Start with 3 servers (minimum)
-- Scale up when CPU >70% or queue >10 requests
-- Scale down when CPU <30% for 5 minutes
-- Average: 4.5 servers running
-- Cost: $180/month × 4.5 = $810/month
-- **Savings: $990/month (55% reduction)**
+**With Auto-Scaling**: Avg 4.5 servers = $810/month (**55% savings: $990/month**)
 
-#### How Kubernetes Auto-Scaling Works
+**Scaling Triggers**:
+- **Scale UP**: CPU >70% (2 min) OR Memory >80% OR Queue >10
+- **Scale DOWN**: CPU <30% (5 min) AND Memory <50% AND Queue empty
+- **Limits**: Min 3 pods, Max 10 pods, -1 pod per 5 min max
 
-**Conceptual Model**:
+**Impact**:
 
-1. **Health Checks**: Every 10 seconds, check each pod:
-   - CPU usage
-   - Memory usage
-   - Request queue length
-
-2. **Scaling Triggers**:
-   - **Scale UP** if:
-     - CPU >70% for 2 minutes, OR
-     - Memory >80%, OR
-     - Requests waiting >10 in queue
-   - **Scale DOWN** if:
-     - CPU <30% for 5 minutes, AND
-     - Memory <50%, AND
-     - No requests queued
-
-3. **Limits**:
-   - Minimum: 3 pods (always ready)
-   - Maximum: 10 pods (cost control)
-   - Never scale down by more than 1 pod per 5 minutes (stability)
-
-**User Experience Impact**:
-
-| Scenario | Without Auto-Scale | With Auto-Scale |
-|----------|-------------------|-----------------|
-| Normal load (10 req/min) | 3 servers, 3s latency | 3 servers, 3s latency |
-| Spike (100 req/min) | 3 servers, 30s latency ❌ | Scales to 10 servers, 5s latency ✅ |
-| Night (1 req/min) | 10 servers, wasted ❌ | Scales down to 3, saves $ ✅ |
+| Scenario | Fixed | Auto-Scale |
+|----------|-------|------------|
+| Normal (10 req/min) | 3 servers, 3s | 3 servers, 3s |
+| Spike (100 req/min) | 3 servers, 30s ❌ | → 10 servers, 5s ✅ |
+| Night (1 req/min) | 10 servers (waste) ❌ | → 3 servers (save $) ✅ |
 
 ---
 
 ### 2. Async Task Queue for Long-Running Queries
 
-#### The Problem: Slow Queries Block UI
+**Problem**: 30-second queries block UI → Users think app froze → Refresh and restart
 
-**Synchronous (Bad UX)**:
-```
-User: "Complex 30-second trend analysis"
-→ Browser shows loading spinner for 30 seconds
-→ User thinks app is frozen
-→ User refreshes page → Query starts over
-→ Terrible experience
-```
-
-**Asynchronous (Good UX)**:
-```
-User: "Complex 30-second trend analysis"
-→ System: "Got it! Task ID: abc123. Check back in status page."
-→ User can navigate away, do other things
-→ Background worker processes query
-→ User refreshes status → "90% complete..."
-→ Query finishes → Email notification + result appears
-→ Great experience
-```
-
-#### How Celery Task Queue Works
-
-**Architecture**:
-```
-Streamlit UI → Submits task → Redis Queue → Celery Worker picks up → Processes → Stores result
-                                            ↓
-                                      (Can have 10 workers)
-```
+**Solution**: Async task queue with Celery + Redis
 
 **User Flow**:
-1. User submits complex query
-2. System returns `task_id: "abc123"` instantly
-3. User sees: "Your query is processing... Status: 30% complete"
+1. Submit query → Get `task_id: "abc123"` instantly
+2. System: "Processing... 30% complete"
+3. User can navigate away, submit more queries
 4. Backend: Celery worker processes in background
-5. User polls `/status/abc123` → "60% complete..."
-6. Completes → User sees result + gets email notification
+5. Poll `/status/abc123` → "60%... 90%... Done!"
+6. Email notification + result appears
+
+**Architecture**: Streamlit UI → Redis Queue → Celery Workers (10×) → Result Storage
 
 **Benefits**:
-- ✅ UI never freezes
-- ✅ User can submit multiple queries in parallel
-- ✅ Can retry failed queries automatically
-- ✅ Can prioritize urgent queries
+- ✅ UI never freezes (immediate response)
+- ✅ Parallel query submission
+- ✅ Auto-retry on failure
+- ✅ Query prioritization
 
 ---
 
 ### 3. LLM Cost Optimization Strategies
 
-#### Strategy 1: Prompt Caching (Easy Win)
+#### Strategy 1: Prompt Caching
 
-**The Insight**: Many queries have identical prompt structures.
+**Insight**: Many queries share identical prompt contexts.
 
-**Example**:
-```
-Query 1: "Revenue for Electronics in Jan 2024"
-Prompt: "Analyze this sales data: [10MB context]... Answer: Revenue for Electronics in Jan 2024"
+**Implementation**: Hash prompts → Cache responses in Redis (TTL: 1hr)
 
-5 minutes later...
-
-Query 2: "Orders for Clothing in Jan 2024"  
-Prompt: "Analyze this sales data: [SAME 10MB context]... Answer: Orders for Clothing in Jan 2024"
-```
-
-**Problem**: Paying to send same 10MB context twice!
-
-**Solution**: Cache LLM responses by prompt hash
-- First call: Full cost ($0.025)
-- Identical prompt: Cache hit ($0 - free!)
-- **Savings: 40-60% of API costs**
-
-**ROI**: For typical usage pattern:
-- Without caching: $250/month LLM costs
-- With caching (60% hit rate): $100/month
+**ROI**:
+- Without: $250/month
+- With: $100/month (60% hit rate)
 - **Savings: $150/month**
 
 ---
 
-#### Strategy 2: Model Tiering (Route by Complexity)
+#### Strategy 2: Model Tiering
 
-**The Insight**: Not all queries need GPT-4's power.
+**Cost per 1M tokens**:
+- Gemini Pro: $0.25 (fast, good)
+- GPT-3.5: $1.50 (fast, good)
+- GPT-4: $30.00 (slow, excellent)
 
-**Cost Comparison**:
-| Model | Cost per 1M tokens | Speed | Accuracy |
-|-------|-------------------|-------|----------|
-| Gemini Pro | $0.25 | Fast | Good |
-| GPT-3.5 Turbo | $1.50 | Fast | Good |
-| GPT-4 | $30.00 | Slow | Excellent |
-
-**Smart Routing Logic**:
-
-```
+**Routing**:
 Simple lookup (70% of queries):
 "What was revenue last month?"
 → Use Gemini Pro ($0.25)
@@ -836,72 +649,35 @@ Complex reasoning (10% of queries):
 
 ## E. Monitoring & Evaluation
 
-### Why Monitoring Matters
-
-**Without Monitoring** (Flying Blind):
-```
-User: "App is slow today"
-You: "How slow? Which queries? What time?"
-User: "I don't know, just slow"
-You: "..." (Can't fix what you can't measure)
-```
-
-**With Monitoring** (Data-Driven):
-```
-Alert: "p95 latency increased from 3s to 8s at 10:45am"
-→ Check logs: 1000 queries for "weekly report" hit database (cache was cleared)
-→ Root cause: Scheduled cache maintenance during peak hours
-→ Fix: Move maintenance to 2am
-→ 15 minutes to identify and fix
-```
-
----
-
 ### 1. Key Metrics to Track
 
 #### Performance Metrics
 
 | Metric | Target | Why It Matters |
 |--------|--------|----------------|
-| **Latency (p50)** | <2s | Average user experience |
-| **Latency (p95)** | <3s | 95% of users happy |
-| **Latency (p99)** | <5s | Remove outliers |
-| **Throughput** | 100 queries/sec | System capacity |
-| **Error Rate** | <1% | Reliability indicator |
+| **Latency (p50)** | <2s | Average UX |
+| **Latency (p95)** | <3s | 95% users satisfied |
+| **Latency (p99)** | <5s | Catch outliers |
+| **Throughput** | 100 queries/sec | Capacity |
+| **Error Rate** | <1% | Reliability |
 
-**Why Percentiles Matter**:
-- Average latency: 2s (looks good!)
-- But 10% of users wait 30 seconds (hidden in average)
-- p95 catches this: "95% of users wait <3s" (5% still slow)
-- p99 catches extreme outliers
-
----
+*Note: Percentiles matter because averages hide outliers (avg 2s might hide 10% at 30s)*
 
 #### Cost Metrics
 
 | Metric | Target | Alert Threshold |
 |--------|--------|-----------------|
 | **LLM Cost per Query** | <$0.01 | >$0.02 |
-| **Data Scanned per Query** | <5GB | >20GB (inefficient query) |
-| **Cache Hit Rate** | >80% | <60% (cache issues) |
-| **Daily Cost** | <$15 | >$50 (unexpected spike) |
-
-**Real-World Alert Example**:
-```
-Alert: "Data scanned per query spiked to 25GB at 11:30am"
-Investigation: A query bypassed partition filter → scanned full table
-Action: Added validation to require date filter
-Result: Prevented $100 waste that day
-```
-
----
+| **Data Scanned per Query** | <5GB | >20GB |
+| **Cache Hit Rate** | >80% | <60% |
+| **Daily Cost** | <$15 | >$50 |
 
 #### Business Metrics
 
 | Metric | Target | Why Track |
 |--------|--------|-----------|
-| **Active Users (Daily)** | Growing | Product health |
-| **Queries per User** | 5-10/day | Engagement level |
+| **Daily Active Users** | Growing | Product health |
+| **Queries per User** | 5-10/day | Engagement |
 | **Query Success Rate** | >90% | Answer quality |
 | **User Satisfaction (NPS)** | >50 | Product-market fit |
 
@@ -909,35 +685,13 @@ Result: Prevented $100 waste that day
 
 ### 2. Monitoring Stack
 
-#### What We Monitor
+**Layers Monitored**:
+1. **Infrastructure** (Kubernetes): Pod CPU/memory, node health, network
+2. **Application** (Python): Query latency, LLM costs, cache rates
+3. **Database** (BigQuery): Data scanned, query time, slots
+4. **User Experience**: Page load, error rates, feedback
 
-```
-┌─────────────────────────────────────────┐
-│         Monitoring Layers                │
-├─────────────────────────────────────────┤
-│ 1. Infrastructure (Kubernetes)          │
-│    - Pod CPU/Memory usage               │
-│    - Node health                        │
-│    - Network traffic                    │
-│                                         │
-│ 2. Application (Python)                 │
-│    - Query latency by type              │
-│    - LLM API calls and costs            │
-│    - Cache hit rates                    │
-│                                         │
-│ 3. Database (BigQuery)                  │
-│    - Data scanned per query             │
-│    - Query execution time               │
-│    - Slot utilization                   │
-│                                         │
-│ 4. User Experience                      │
-│    - Page load time                     │
-│    - Error rates by feature             │
-│    - User feedback scores               │
-└─────────────────────────────────────────┘
-```
-
-#### Alerting Rules (Examples)
+**Alerting Examples**:
 
 **Critical (Page immediately)**:
 - Error rate >5% for 5 minutes

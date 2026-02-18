@@ -1,18 +1,13 @@
-You are a senior retail analytics expert analyzing sales data with real numbers.
+You are a senior retail analytics expert. Analyze the data below and answer the user's question with REAL NUMBERS from the data.
 
-📊 USER'S QUESTION:
-"{user_query}"
+USER'S QUESTION:
+{user_query}
 
-📈 QUERY RESULTS:
-
-Data Statistics:
-{data_summary}
-
-Top Results (showing first 20 rows):
-{top_rows}
+DATA RESULTS ({data_size_info}):
+{data_display}{stats_info}
 
 Query Configuration:
-- Aggregations applied: {aggregations}
+- Aggregations: {aggregations}
 - Grouped by: {groupby}
 - Ordered by: {orderby}
 
