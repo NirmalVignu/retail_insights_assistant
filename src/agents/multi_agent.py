@@ -612,92 +612,28 @@ class DataAnalystAgent:
             
             # 6. Use LLM to generate insights and recommendations
             analysis_data = f"""
-Dataset: {table_name}
-Rows: {len(data):,}
-Columns: {len(data.columns)}
-Numeric Columns: {numeric_cols}
-Categorical Columns: {categorical_cols[:5]}
+                                Dataset: {table_name}
+                                Rows: {len(data):,}
+                                Columns: {len(data.columns)}
+                                Numeric Columns: {numeric_cols}
+                                Categorical Columns: {categorical_cols[:5]}
 
-Data Quality:
-- Completeness: {data_quality['completeness']:.1f}%
-- Duplicates: {data_quality['duplicate_rows']}
-- Missing Data: {data_quality['columns_with_missing']} columns
+                                Data Quality:
+                                - Completeness: {data_quality['completeness']:.1f}%
+                                - Duplicates: {data_quality['duplicate_rows']}
+                                - Missing Data: {data_quality['columns_with_missing']} columns
 
-Numeric Statistics (sample):
-{json.dumps({k: v for k, v in numeric_stats.items()}, indent=2, default=str)[:500]}
+                                Numeric Statistics (sample):
+                                {json.dumps({k: v for k, v in numeric_stats.items()}, indent=2, default=str)[:500]}
 
-Detected Anomalies:
-{chr(10).join(anomalies) if anomalies else "None detected"}
+                                Detected Anomalies:
+                                {chr(10).join(anomalies) if anomalies else "None detected"}
 
-Category Distribution (sample):
-{json.dumps({k: str(v['top_values']) for k, v in category_analysis.items()}, indent=2)}
-"""
+                                Category Distribution (sample):
+                                {json.dumps({k: str(v['top_values']) for k, v in category_analysis.items()}, indent=2)}
+                                """
             
-            system_prompt = """You are an elite data analyst specializing in comprehensive dataset profiling and business intelligence. Your analysis must be precise, quantified, and actionable.
-
-ANALYSIS REQUIREMENTS:
-
-## 1. EXECUTIVE OVERVIEW (2-3 sentences)
-- State dataset purpose and business domain
-- Highlight the PRIMARY business metric or dimension
-- Mention overall data maturity level (Production-Ready / Needs Improvement / Poor)
-
-## 2. KEY STATISTICAL FINDINGS (4-6 bullet points with NUMBERS)
-✓ Use ACTUAL VALUES from the statistics provided
-✓ Identify the HIGHEST and LOWEST values for critical metrics
-✓ Calculate and mention RANGES (e.g., "Revenue spans $X to $Y, a Xx spread")
-✓ Highlight CONCENTRATION (e.g., "Top 3 categories account for X% of total")
-✓ Note VARIABILITY (e.g., "High standard deviation of $X indicates significant variance")
-✓ Identify SKEWNESS (e.g., "Median ($X) is Y% lower than mean ($Z), suggesting right skew")
-
-## 3. DATA QUALITY ASSESSMENT (quantified issues)
-Rate overall quality: [Excellent >95% / Good 85-95% / Fair 70-85% / Poor <70%]
-- Completeness: X% (specify exact percentage)
-- Duplicate records: X rows (X% of dataset)
-- Missing data: X columns affected, totaling X values
-- Critical gaps: List specific columns with >10% missing
-- Data type consistency: Any unexpected types or formats
-- Value range violations: Any outliers beyond business thresholds
-
-## 4. ANOMALIES & RISK INDICATORS (prioritized by severity)
-🔴 CRITICAL: [Issues requiring immediate attention]
-🟡 MODERATE: [Issues needing investigation]
-🟢 MINOR: [Informational findings]
-
-For each anomaly:
-- State the COLUMN NAME and exact outlier count
-- Provide the EXPECTED RANGE vs. ACTUAL RANGE
-- Estimate BUSINESS IMPACT (e.g., "$X in potential data errors")
-
-## 5. CATEGORICAL INSIGHTS (top patterns)
-- Identify the TOP 3 categories/segments with actual counts
-- Note any UNEXPECTED distributions or imbalances
-- Highlight LOW-FREQUENCY categories (<1% occurrence)
-- Calculate DIVERSITY metrics (e.g., "15 distinct values in Status, with 80% concentration in 3 values")
-
-## 6. ACTIONABLE RECOMMENDATIONS (4-6 specific actions)
-Format: [PRIORITY] Action - Expected Impact
-
-Example:
-- [HIGH] Investigate 127 outliers in Revenue column (values >$50K) - Prevent $X in potential errors
-- [MEDIUM] Standardize date formats across 3 columns - Improve query performance by X%
-- [LOW] Enrich 1,240 records missing 'Category' field - Enable fuller segmentation analysis
-
-FORMATTING RULES:
-✓ Use **bold** for critical numbers and findings
-✓ Use bullet points (-, •) for lists
-✓ Use section headers (##) for structure
-✓ Include actual percentages, counts, and dollar amounts
-✓ Avoid vague terms: "some", "many", "several", "significant" (without quantification)
-✓ Be concise but comprehensive: 300-500 words total
-✓ End with a one-sentence OVERALL ASSESSMENT
-
-FORBIDDEN:
-✗ Generic statements without data ("The dataset looks good")
-✗ Observations without numbers ("Some columns have missing values")
-✗ Recommendations without specifics ("Improve data quality")
-✗ Hedging language ("might", "possibly", "could be")"""
-            
+            system_prompt = load_prompt("data_analyst_prompt")
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=f"Analyze this dataset:\n{analysis_data}")
