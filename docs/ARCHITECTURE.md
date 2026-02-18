@@ -1049,13 +1049,15 @@ Files (CSV) → pandas → DuckDB (in-memory) → Streamlit
 - Spark Streaming with 10-min watermark
 - Delta Lake for ACID writes, checkpointing
 - **Benefits**: Near real-time (seconds latency), exactly-once processing
+
+# Trigger computation and save
+```
 cleaned_ddf = ddf \
     .drop_duplicates(subset=['Order ID']) \
     .query("Amount > 0") \
     .assign(Date=lambda df: dd.to_datetime(df['Date'])) \
     .assign(Month=lambda df: df['Date'].dt.to_period('M'))
-
-# Trigger computation and save
+    
 cleaned_ddf.to_parquet(
     "s3://retail-data/curated/sales_dask",
     partition_on=['Year', 'Month'],
@@ -1111,45 +1113,6 @@ query = parsed_df.writeStream \
 - Statistical anomalies (revenue >3 std dev flagged)
 
 **Implementation**: Run checks in Airflow DAG before materializing views
-
----
-
-## Slide 11: Query Optimization Techniques
-
-### Smart Partitioning & Indexing
-
-**Partition Strategy**: Date (Year/Month) + Cluster by Category + Region
-
-**Example**:
-```sql
-SELECT Category, SUM(Amount) as Revenue
-FROM sales_data
-WHERE Date >= '2024-01-01' AND Category = 'Electronics'
-GROUP BY Category
-```
-
-**Without optimization**: Scan 100GB = $0.50, 15s
-**With partition**: Scan 8GB (2024 only) = $0.04, 2s  
-**With cluster**: Scan 0.5GB (Electronics only) = $0.0025, 0.5s
-
-**Result: 200× cost reduction, 30× speed improvement**
-
-context = DataContext()
-
-# Define expectations
-suite = context.create_expectation_suite("sales_data_quality")
-
-suite.expect_column_values_to_not_be_null("Order ID")
-suite.expect_column_values_to_be_between("Amount", min_value=0, max_value=1000000)
-suite.expect_column_values_to_be_in_set("Status", ["Shipped", "Pending", "Cancelled"])
-suite.expect_column_values_to_match_strftime_format("Date", "%Y-%m-%d")
-
-# Validate on ingested data
-results = context.run_checkpoint(checkpoint_name="sales_ingestion")
-
-if not results.success:
-    send_alert("Data quality issues detected!")
-```
 
 ---
 
@@ -1439,13 +1402,6 @@ GROUP BY day, Category, state;
 - Data freshness (last updated timestamp)
 - Quality score = (completeness × 0.7) + ((1 - duplicates) × 0.3)
 - Missing data percentage per table/column
-```
-
-**Metrics**:
-- Data freshness (last update)
-- Completeness percentage
-- Duplicate rate
-- Schema drift detection
 
 ### Evaluation Framework
 
@@ -1545,93 +1501,6 @@ def render_response(response):
 | Throughput | 100 queries/sec | Peak load (1000+ users) |
 | Accuracy | >90% | Weekly eval |
 | Cache hit rate | >80% | Cost efficiency |
-
----
-
-## Slide 15: Future Enhancements
-
-### Planned Capabilities
-
-**Enhanced Analytics**
-  • Cost: $7.50/month (vs $25 without cache)
-
-Vector Store (Pinecone):
-  • 1M vectors, 768 dimensions
-  • Standard plan: $70/month
-
-Caching (Redis):
-  • ElastiCache r6g.large
-  • Cost: $85/month
-
-Load Balancing:
-  • 3x Kubernetes pods (t3.large)
-  • Cost: $180/month
-
-Monitoring:
-  • CloudWatch + Grafana Cloud
-  • Cost: $30/month
-
-Total: ~$412/month
-
-Cost per query: $0.004 (vs $0.003 current)
-```
-
-**Cost Optimization ROI**:
-- Without optimization: ~$1,200/month
-- With optimization: ~$412/month
-- **Savings: 66%** ($788/month)
-
-### Performance Benchmarks
-
-**Query Processing Time Breakdown**:
-```
-┌─────────────────────────────────────────────────┐
-│ Component        │ Current │ Optimized │ Gain  │
-├─────────────────────────────────────────────────┤
-│ Query Resolution │  1.5s   │   0.8s    │ 47%   │
-│ Partition Lookup │  0.0s   │   0.1s    │  -    │
-│ Cache Check      │  0.0s   │   0.05s   │  -    │
-│ Data Extraction  │  0.5s   │   0.3s    │ 40%   │
-│ LLM Analysis     │  3.0s   │   1.5s*   │ 50%** │
-│ Formatting       │  0.2s   │   0.2s    │  0%   │
-├─────────────────────────────────────────────────┤
-│ Total (Cache Miss)│ 5.2s   │   2.95s   │ 43%   │
-│ Total (Cache Hit) │   -    │   0.5s    │ 90%   │
-└─────────────────────────────────────────────────┘
-
-* With prompt caching + smaller model for simple queries
-** Assuming 70% cache hit rate: 0.8*0.5s + 0.3*1.5s = 0.85s avg
-```
-
-**Throughput Comparison**:
-```
-Single Instance:
-  • Current: ~10 queries/minute (sequential)
-  • Optimized: ~120 queries/minute (async + caching)
-  • Gain: 12x
-
-Load Balanced (3 instances):
-  • Throughput: ~360 queries/minute
-  • ~ 6 queries/second sustained
-  • Peak: ~15 queries/second with auto-scaling
-```
-
-### Scalability Limits
-
-**DuckDB In-Memory Limits**:
-- Single machine: ~32GB RAM = ~10-15GB data
-- Recommendation: Use for aggregates/cache only at scale
-
-**BigQuery Scalability**:
-- Tested up to 100TB datasets
-- Query cost-per-TB stays constant
-- Auto-scaling handles concurrency
-
-**LLM API Rate Limits**:
-- Gemini Pro: 60 requests/minute (free tier)
-- Gemini Pro: 1,000 requests/minute (paid tier)
-- OpenAI GPT-3.5: 3,500 requests/minute (tier 4)
-- Solution: Implement backoff + request queue
 
 ---
 
