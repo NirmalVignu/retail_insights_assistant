@@ -714,7 +714,7 @@ formatted = template.format(
     stats_info=statistics
 )
 ```
-```
+
 
 **1. Structured Prompt Templates**:
 ```
@@ -743,6 +743,7 @@ Output Specification
     ├─► Required sections
     ├─► Formatting rules
     └─► Validation criteria
+    
 ```
 
 **2. Prompt Optimization Techniques**:
@@ -791,6 +792,7 @@ Output Specification
 - Output: Structured query spec with confidence score
 
 **STEP 3: Data Extraction**
+```
 ├──────────────────────────────────────────────────────────────┤
 │   ┌────────────────────┐                                     │
 │   │ SQL Builder        │  • Construct optimized SQL          │
@@ -870,15 +872,13 @@ Output Specification
 │   ├── Confidence score badge                                 │
 │   └── Suggested follow-up buttons                            │
 └──────────────────────────────────────────────────────────────┘
-```
-
 **Performance Metrics** (Current Implementation):
 - Query Resolution: ~1-2 seconds
 - Data Extraction: ~0.1-0.5 seconds (DuckDB)
 - LLM Analysis: ~2-4 seconds (API latency)
 - Visualization: ~0.2 seconds
 - **Total End-to-End**: ~4-7 seconds per query
-
+```
 ---
 
 ## Slide 7: Query-Response Pipeline Example
