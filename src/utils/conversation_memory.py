@@ -228,21 +228,32 @@ class ConversationMemory:
         cache_key = self.get_query_cache_key(query)
         self.query_cache[cache_key] = {
             "timestamp": datetime.now().isoformat(),
-            "result": result
+            "result": result,
+            "query": query[:100]  # Store query preview for debugging
         }
-        logger.info(f"Cached result for query: {query[:50]}...")
+        logger.info(f"✅ CACHED result for query: {query[:50]}...")
+        logger.info(f"   Cache key: {cache_key}")
+        logger.info(f"   Cache now has {len(self.query_cache)} entries")
     
     def get_cached_query_result(self, query: str) -> Optional[Any]:
         """Get cached result if available (within 5 minutes)"""
         cache_key = self.get_query_cache_key(query)
+        logger.info(f"🔍 Looking up cache key: {cache_key}")
+        logger.info(f"   For query: {query[:50]}...")
+        logger.info(f"   Available cache keys: {list(self.query_cache.keys())}")
+        
         if cache_key in self.query_cache:
             cached = self.query_cache[cache_key]
             cache_time = datetime.fromisoformat(cached["timestamp"])
             age_minutes = (datetime.now() - cache_time).total_seconds() / 60
             
             if age_minutes < 5:  # Cache valid for 5 minutes
-                logger.info(f"Using cached result for query (age: {age_minutes:.1f}min)")
+                logger.info(f"✅ CACHE HIT! Using cached result (age: {age_minutes:.1f}min)")
                 return cached["result"]
+            else:
+                logger.info(f"❌ Cache expired (age: {age_minutes:.1f}min)")
+        else:
+            logger.info(f"❌ CACHE MISS - Key not found")
         return None
     
     def clear_cache(self) -> None:

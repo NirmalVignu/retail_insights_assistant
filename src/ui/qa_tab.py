@@ -230,21 +230,56 @@ def render_qa_tab():
             st.session_state.qa_selected_table = selected_table
         
         with col2:
-            st.write("")  # Spacing
             if selected_table != "🌐 All Tables":
-                st.info(f"Searching: **{selected_table}** only")
+                st.info(f"🎯 Searching: **{selected_table}** only")
+                
+                # Add data cleaning option with button
+                st.markdown("---")
+                st.markdown("**🧹 Data Quality Options:**")
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("📊 View Table Stats", key="view_stats_btn", use_container_width=True):
+                        stats = st.session_state.data_processor.get_table_stats(selected_table)
+                        st.write(f"**Rows:** {stats.get('row_count', 'N/A')}")
+                        st.write(f"**Columns:** {stats.get('column_count', 'N/A')}")
+                
+                with col_btn2:
+                    if st.button("🧹 Apply Strict Clean", key="strict_clean_btn", use_container_width=True, 
+                                help="Remove rows with >80% null values"):
+                        with st.spinner(f"Re-cleaning {selected_table}..."):
+                            success = st.session_state.data_processor.reclean_table(selected_table, strict=True)
+                            if success:
+                                st.success(f"✅ Cleaned!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed")
             else:
-                st.info(f"Searching: **All {len(available_tables)}** files")
+                st.info(f"🌐 Searching: **All {len(available_tables)}** files")
         
         # Display system info
         with st.expander("ℹ️ System Information", expanded=False):
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Conversation Messages", len(st.session_state.conversation_memory.messages))
             with col2:
                 st.metric("Chat History", len(st.session_state.qa_history))
             with col3:
+                cache_size = len(st.session_state.conversation_memory.query_cache)
+                st.metric("Cached Queries", cache_size)
+            with col4:
                 st.metric("Memory Enabled", "✅" if st.session_state.conversation_memory else "❌")
+            
+            # Data quality info
+            if selected_table != "🌐 All Tables":
+                st.divider()
+                st.caption("🧹 **Data Quality:**")
+                st.caption("• All uploaded files are automatically cleaned (empty rows, duplicate headers, summary rows removed)")
+                st.caption("• Enable 'Strict Cleaning' above to remove rows with >80% null values")
+                st.caption("• Text columns with numeric values are automatically converted to numbers")
+            
+            if cache_size > 0:
+                st.caption("💡 Repeated queries are served from cache for instant responses (5 min TTL)")
         
         # Display conversation context
         display_conversation_context()
@@ -265,6 +300,7 @@ def render_qa_tab():
                     content = message.get("content", "")
                     confidence = message.get("confidence", 0)
                     table_source = message.get("table_source", "")
+                    cached = message.get("cached", False)  # Check if from cache
                     
                     if role == "user":
                         with st.chat_message("user"):
@@ -278,8 +314,15 @@ def render_qa_tab():
                                 st.write(content.get("summary", content))
                             else:
                                 st.write(content)
+                            
+                            # Show cache indicator and table source
+                            caption_parts = []
                             if table_source:
-                                st.caption(f"📁 Queried: {table_source}")
+                                caption_parts.append(f"📁 Queried: {table_source}")
+                            if cached:
+                                caption_parts.append("📦 Cached response")
+                            if caption_parts:
+                                st.caption(" • ".join(caption_parts))
                             
                             # Display confidence if available
                             if confidence > 0:
@@ -307,6 +350,17 @@ def render_qa_tab():
         clear_button = col3.button("Clear 🗑️", use_container_width=True, key="clear_btn")
         export_button = col4.button("Export 📥", use_container_width=True, key="export_btn")
         
+        # Show cache info with more details
+        cache_size = len(st.session_state.conversation_memory.query_cache)
+        if cache_size > 0:
+            st.caption(f"💡 {cache_size} query result(s) cached for instant retrieval (5 min TTL)")
+            with st.expander("🔍 View Cached Queries", expanded=False):
+                for idx, (cache_key, cache_data) in enumerate(st.session_state.conversation_memory.query_cache.items()):
+                    query_preview = cache_key[:60] + "..." if len(cache_key) > 60 else cache_key
+                    timestamp = cache_data.get("timestamp", "Unknown")
+                    st.text(f"{idx+1}. {query_preview} (cached at {timestamp[-8:]})")
+
+        
         if send_button:
             if user_input.strip():
                 # Create detailed progress container
@@ -330,19 +384,49 @@ def render_qa_tab():
                         else:
                             enhanced_query = user_input
                         
-                        # Step 1: Query Resolution
-                        status_text.text("⏳ Step 1/4: Parsing query with AI...")
-                        progress_bar.progress(15)
+                        # Create cache key that includes table context for accuracy
+                        cache_key = f"{user_input}|table:{selected_table}"
                         
-                        # Step 2: Data Extraction
-                        status_text.text("⏳ Step 2/4: Extracting data from database...")
-                        progress_bar.progress(40)
+                        # Check cache FIRST for faster responses
+                        memory = st.session_state.conversation_memory
+                        cached_result = memory.get_cached_query_result(cache_key)
                         
-                        # Step 3: Validation
-                        status_text.text("⏳ Step 3/4: Validating results...")
-                        progress_bar.progress(65)
+                        # Debug logging
+                        logger.info(f"Cache lookup for: {cache_key[:80]}...")
+                        logger.info(f"Current cache size: {len(memory.query_cache)} entries")
+                        logger.info(f"Cache keys: {list(memory.query_cache.keys())[:3]}")
                         
-                        result = orchestrator.process_query(enhanced_query)
+                        if cached_result:
+                            # Cache hit! Return immediately
+                            status_text.text("📦 Retrieved from cache (instant response!)")
+                            progress_bar.progress(100)
+                            result = cached_result
+                            logger.info(f"✅ CACHE HIT for query: {user_input[:50]}...")
+                            
+                            # Show prominent cache hit message
+                            st.success("🚀 **CACHE HIT!** - Retrieved instantly from cache (saved ~3 seconds)")
+                        else:
+                            # Cache miss - process normally
+                            logger.info(f"❌ CACHE MISS - Processing query...")
+                            
+                            # Step 1: Query Resolution
+                            status_text.text("⏳ Step 1/4: Parsing query with AI...")
+                            progress_bar.progress(15)
+                            
+                            # Step 2: Data Extraction
+                            status_text.text("⏳ Step 2/4: Extracting data from database...")
+                            progress_bar.progress(40)
+                            
+                            # Step 3: Validation
+                            status_text.text("⏳ Step 3/4: Validating results...")
+                            progress_bar.progress(65)
+                            
+                            result = orchestrator.process_query(enhanced_query)
+                            
+                            # Store result in cache for future queries (use same cache key)
+                            memory.cache_query_result(cache_key, result)
+                            logger.info(f"✅ CACHED result for query: {user_input[:50]}...")
+                            logger.info(f"Cache now has {len(memory.query_cache)} entries")
                         
                         # Verify result is a dictionary
                         if not isinstance(result, dict):
@@ -374,18 +458,22 @@ def render_qa_tab():
                         if not isinstance(formatted_response, dict):
                             formatted_response = {"summary": str(formatted_response)}
                         
-                        # Add assistant message
+                        # Add assistant message with cache indicator
                         st.session_state.qa_history.append({
                             "role": "assistant",
                             "content": formatted_response,
                             "confidence": confidence,
                             "full_result": result,
-                            "table_source": selected_table
+                            "table_source": selected_table,
+                            "cached": cached_result is not None  # Flag if from cache
                         })
                         
                         # Complete
                         progress_bar.progress(100)
-                        status_text.text("✅ Query processed successfully!")
+                        if cached_result:
+                            status_text.text("✅ Query retrieved from cache (instant response)!")
+                        else:
+                            status_text.text("✅ Query processed and cached successfully!")
                         import time
                         time.sleep(0.5)
                         progress_container.empty()
@@ -404,6 +492,7 @@ def render_qa_tab():
         
         if clear_button:
             from data_processor import get_processor
+            cache_count = len(st.session_state.conversation_memory.query_cache)
             st.session_state.qa_history = []
             st.session_state.conversation_memory = ConversationMemory()
             processor = st.session_state.get("processor") or get_processor()
@@ -418,7 +507,7 @@ def render_qa_tab():
                     processor=processor,
                     conversation_memory=st.session_state.conversation_memory
                 )
-            st.info("✅ Conversation cleared")
+            st.success(f"✅ Conversation cleared (removed {cache_count} cached queries)")
             st.rerun()
         
         if export_button:

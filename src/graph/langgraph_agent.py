@@ -148,12 +148,19 @@ class LangGraphQueryAgent:
         logger.info(f"LangGraph: Analyzing query: {user_query}")
         
         try:
-            # Use enhanced agent for query resolution
-            analysis = self.enhanced_agent.resolve_query(user_query)
+            # Build RAG context for conversation continuity
+            rag_context = None
+            if self.memory:
+                rag_context = self.memory.build_rag_context(user_query, k=2)
+                logger.info(f"RAG context built with {len(self.memory.messages)} conversation messages")
+            
+            # Use enhanced agent for query resolution with RAG context
+            analysis = self.enhanced_agent.resolve_query(user_query, rag_context)
             state["query_analysis"] = analysis
             state["conversation_context"] = self.memory.messages if self.memory else []
+            state["rag_context_used"] = rag_context is not None
             state["analyzed"] = True
-            logger.info(f"Query analyzed successfully: {analysis.get('parsed_intent')}")
+            logger.info(f"Query analyzed successfully: {analysis.get('parsed_intent')} (confidence: {analysis.get('confidence_score', 0):.2f})")
         except Exception as e:
             logger.error(f"Query analysis failed: {e}")
             state["error"] = str(e)
@@ -203,7 +210,12 @@ class LangGraphQueryAgent:
                 all_results = []
                 for idx, sub_q in enumerate(sub_queries):
                     try:
-                        sub_analysis = self.enhanced_agent.resolve_query(sub_q)
+                        # Build RAG context for sub-query resolution
+                        rag_context = None
+                        if self.memory:
+                            rag_context = self.memory.build_rag_context(sub_q, k=2)
+                        
+                        sub_analysis = self.enhanced_agent.resolve_query(sub_q, rag_context)
                         sql = self._build_sql(sub_analysis)
                         logger.info(f"Sub-query {idx+1} SQL: {sql}")
                         result = self.processor.query(sql)
@@ -321,7 +333,14 @@ class LangGraphQueryAgent:
         user_query = state.get("user_query", "")
         prev_message = state.get("validation_message", "")
         logger.info(f"LangGraph: Refining query due to: {prev_message}")
-        refined = self.enhanced_agent.resolve_query(f"{user_query}. Previous error: {prev_message}")
+        
+        # Build RAG context for refinement
+        rag_context = None
+        if self.memory:
+            rag_context = self.memory.build_rag_context(user_query, k=2)
+        
+        refined_query = f"{user_query}. Previous error: {prev_message}"
+        refined = self.enhanced_agent.resolve_query(refined_query, rag_context)
         state["query_analysis"] = refined
         state["refinement_count"] = state.get("refinement_count", 0) + 1
         return self._ensure_flat_state(state, "refine_query")
@@ -403,6 +422,41 @@ class LangGraphQueryAgent:
             "errors": errors
         }
     
+    def _quote_column(self, col: str) -> str:
+        """Quote column name if it contains spaces or special characters"""
+        if ' ' in col or '-' in col or any(c in col for c in ['(', ')', '+', '*', '/']):
+            return f'"{col}"'
+        return col
+    
+    def _apply_aggregation(self, agg: str, column: str, table: str) -> str:
+        """
+        Apply aggregation with smart type casting.
+        Only casts to DOUBLE if column is VARCHAR/TEXT - otherwise uses native type.
+        """
+        quoted_col = self._quote_column(column)
+        agg_upper = agg.upper()
+        
+        # Check column type from schema
+        try:
+            schema = self.processor.get_table_schema(table)
+            col_type = schema.get(column, "").upper()
+        except Exception:
+            # If schema check fails, default to safe casting
+            col_type = "VARCHAR"
+        
+        # For numeric aggregations, only cast if column is text type
+        if agg_upper in ['SUM', 'AVG', 'MAX', 'MIN']:
+            # Check if column is stored as text
+            if 'VARCHAR' in col_type or 'STRING' in col_type or 'TEXT' in col_type:
+                return f"{agg_upper}(CAST({quoted_col} AS DOUBLE))"
+            else:
+                # Already numeric - no cast needed
+                return f"{agg_upper}({quoted_col})"
+        elif agg_upper == 'COUNT':
+            return f"COUNT({quoted_col})"
+        else:
+            return f"{agg_upper}({quoted_col})"
+    
     def _build_sql(self, analysis: Dict[str, Any]) -> str:
         """Build SQL from query specification with intelligent enhancements"""
         table = analysis.get("primary_table", "")
@@ -425,48 +479,76 @@ class LangGraphQueryAgent:
         
         if date_groupby:
             # Use strftime with explicit CAST for date columns
-            month_expr = f"strftime('%Y-%m', CAST({date_groupby} AS DATE)) as month"
+            quoted_date_col = self._quote_column(date_groupby)
+            month_expr = f"strftime('%Y-%m', CAST({quoted_date_col} AS DATE)) as month"
             
             # Build select with aggregations if specified
             select_parts = [month_expr]
             for entity in entities:
-                if entity != date_groupby:
+                if entity != date_groupby and entity not in filters:
                     if aggregations:
-                        # Apply aggregations to numeric columns
+                        # Apply aggregations to numeric columns with type casting
                         for agg in aggregations:
-                            select_parts.append(f"{agg.upper()}({entity}) as {agg}_{entity}")
+                            agg_expr = self._apply_aggregation(agg, entity, table)
+                            alias = f"{agg}_{entity.replace(' ', '_')}"
+                            select_parts.append(f"{agg_expr} as {alias}")
                     else:
-                        select_parts.append(entity)
+                        quoted_entity = self._quote_column(entity)
+                        select_parts.append(quoted_entity)
             
             select_clause = ", ".join(select_parts)
             groupby_clause = f" GROUP BY month"
             orderby_clause = " ORDER BY month ASC"
         else:
             # Standard SQL building
-            if entities:
-                select_parts = []
+            select_parts = []
+            
+            # Always add GROUP BY columns first (required for SQL)
+            if groupby:
+                select_parts.extend([self._quote_column(col) for col in groupby])
+            
+            # Then add aggregations on entities
+            if entities and aggregations:
                 for entity in entities:
-                    if aggregations:
+                    # Only aggregate if entity is not in GROUP BY or FILTERS
+                    if entity not in groupby and entity not in filters:
                         for agg in aggregations:
-                            select_parts.append(f"{agg.upper()}({entity}) as {agg}_{entity}")
-                    else:
-                        select_parts.append(entity)
-                select_clause = ", ".join(select_parts) if select_parts else ", ".join(entities)
-            else:
-                select_clause = "*"
+                            agg_expr = self._apply_aggregation(agg, entity, table)
+                            alias = f"{agg}_{entity.replace(' ', '_')}"
+                            select_parts.append(f"{agg_expr} as {alias}")
+            elif entities:
+                # No aggregations, just select entities (exclude filter columns)
+                for entity in entities:
+                    if entity not in filters:
+                        quoted_entity = self._quote_column(entity)
+                        if quoted_entity not in select_parts:  # Avoid duplicates
+                            select_parts.append(quoted_entity)
+            
+            # Fallback to SELECT * if no parts specified
+            select_clause = ", ".join(select_parts) if select_parts else "*"
             
             if groupby:
-                groupby_clause = " GROUP BY " + ", ".join(groupby)
+                quoted_groupby = [self._quote_column(col) for col in groupby]
+                groupby_clause = " GROUP BY " + ", ".join(quoted_groupby)
             
             if orderby:
-                order_parts = [f"{col} {direction}" for col, direction in orderby.items()]
+                order_parts = []
+                for col, direction in orderby.items():
+                    # If ordering by an aggregated column, use the alias
+                    if aggregations and col in entities and col not in groupby:
+                        # Use the aggregation alias (e.g., sum_GROSS_AMT)
+                        alias = f"{aggregations[0]}_{col.replace(' ', '_')}"
+                        order_parts.append(f"{alias} {direction}")
+                    else:
+                        # Use the quoted column name
+                        order_parts.append(f"{self._quote_column(col)} {direction}")
                 orderby_clause = " ORDER BY " + ", ".join(order_parts)
         
         # Build final SQL
         sql = f"SELECT {select_clause} FROM {table}"
         
         if filters:
-            where_conditions = [f"{k} = '{v}'" for k, v in filters.items()]
+            where_conditions = [f"{self._quote_column(k)} = '{v}'" for k, v in filters.items()]
             sql += " WHERE " + " AND ".join(where_conditions)
         
         sql += groupby_clause
@@ -481,11 +563,52 @@ class LangGraphQueryAgent:
     def process_query(self, user_query: str) -> Dict[str, Any]:
         initial_state = {"user_query": user_query, "refinement_count": 0}
         final_state = self.graph.invoke(initial_state)
+        
+        # Extract results
+        query_analysis = final_state.get("query_analysis", {})
+        extracted_data = final_state.get("extracted_data", {})
+        formatted_response = final_state.get("formatted_response", {})
+        confidence_score = query_analysis.get("confidence_score", 0.5)
+        
+        # Add to conversation memory for RAG context in future queries
+        if self.memory:
+            try:
+                # Add user message
+                self.memory.add_message(
+                    role="user",
+                    content=user_query,
+                    metadata={
+                        "query_type": query_analysis.get("query_type"),
+                        "confidence": confidence_score,
+                        "timestamp": final_state.get("query_analysis", {}).get("timestamp", "")
+                    }
+                )
+                
+                # Add assistant message with response summary
+                response_summary = ""
+                if isinstance(formatted_response, dict):
+                    response_summary = formatted_response.get("summary", str(formatted_response))
+                else:
+                    response_summary = str(formatted_response)
+                
+                self.memory.add_message(
+                    role="assistant",
+                    content=response_summary[:500],  # Truncate for memory efficiency
+                    metadata={
+                        "row_count": extracted_data.get("row_count", 0),
+                        "confidence": confidence_score,
+                        "query_type": query_analysis.get("query_type")
+                    }
+                )
+                logger.info(f"Added query to conversation memory (total: {len(self.memory.messages)} messages)")
+            except Exception as e:
+                logger.warning(f"Failed to add to conversation memory: {e}")
+        
         return {
             "user_query": user_query,
-            "query_resolution": final_state.get("query_analysis"),
-            "extracted_data": final_state.get("extracted_data"),
-            "formatted_response": final_state.get("formatted_response"),
-            "confidence_score": final_state.get("query_analysis", {}).get("confidence_score", 0.5),
+            "query_resolution": query_analysis,
+            "extracted_data": extracted_data,
+            "formatted_response": formatted_response,
+            "confidence_score": confidence_score,
             "success": not final_state.get("needs_refine", False)
         }

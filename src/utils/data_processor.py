@@ -10,7 +10,7 @@ import pandas as pd
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import logging
-from .input_loader import load_dataframe_from_bytes, infer_table_name
+from .input_loader import load_dataframe_from_bytes, infer_table_name, clean_dataframe
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -242,6 +242,40 @@ class DataProcessor:
         except Exception as e:
             logger.error(f"Failed to get stats for {table_name}: {e}")
             return {}
+    
+    def reclean_table(self, table_name: str, strict: bool = True) -> bool:
+        """
+        Re-clean an already loaded table with stricter rules.
+        
+        Args:
+            table_name: Name of the table to re-clean
+            strict: If True, apply strict cleaning rules (>80% null removal)
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if table_name not in self.loaded_tables:
+                logger.error(f"Table {table_name} not found in loaded tables")
+                return False
+            
+            # Extract current data
+            df = self.conn.execute(f"SELECT * FROM {table_name}").fetch_df()
+            original_rows = len(df)
+            
+            # Apply cleaning
+            df_cleaned = clean_dataframe(df, strict=strict)
+            
+            # Re-register the cleaned table
+            self.conn.unregister(table_name)
+            self.conn.register(table_name, df_cleaned)
+            
+            logger.info(f"Re-cleaned {table_name}: {original_rows} → {len(df_cleaned)} rows")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to re-clean table {table_name}: {e}")
+            return False
     
     def list_tables(self) -> List[str]:
         """

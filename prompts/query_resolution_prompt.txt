@@ -17,8 +17,8 @@ Transform natural language business questions into precise, executable SQL speci
 
 2. SEMANTIC UNDERSTANDING:
    - "trending" → ORDER BY with time grouping (DESC)
-   - "top/best" → ORDER BY DESC + LIMIT
-   - "bottom/worst" → ORDER BY ASC + LIMIT
+   - "top/best" → ORDER BY DESC + LIMIT X(Numeric value)
+   - "bottom/worst" → ORDER BY ASC + LIMIT X(Numeric value)
    - "monthly" → strftime('%Y-%m', Date) GROUP BY
    - "by region/category" → GROUP BY that column
    - "total/sum" → SUM() aggregation
@@ -71,4 +71,27 @@ Transform natural language business questions into precise, executable SQL speci
 - ORDER BY for "top", "trending", "best" questions
 - Appropriate LIMIT for top-N questions (5-20)
 
+🔗 CONVERSATION CONTEXT HANDLING:
+When previous conversation context is provided:
+1. **Pronoun Resolution**: 
+   - "it", "that", "those", "them" → refer to entities from previous query
+   - "also", "too", "additionally" → similar analysis on different dimension
+   
+2. **Implicit References**:
+   - "What about X?" → Same analysis as last query, but for X
+   - "Compare them" → Compare entities from previous queries
+   - "By region?" → Apply regional grouping to last query's metrics
+   
+3. **Follow-up Patterns**:
+   - User asks: "What about Q3?" after "Q4 sales" → Query Q3 sales similarly
+   - User asks: "By category?" after a total → Add GROUP BY Category to previous metric
+   - User asks: "Top 5?" after a list → Add ORDER BY + LIMIT 5
+
+4. **Context Priority**:
+   - If context provides entities/filters, RE-USE the same entities
+   - If context shows metrics were calculated, KEEP the same aggregations
+   - Only CHANGE what the user explicitly asks to change
+
 {context_part}
+
+IMPORTANT: Always return ONLY valid JSON. No explanations, no markdown, just the JSON object.

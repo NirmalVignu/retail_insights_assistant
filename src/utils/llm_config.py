@@ -37,7 +37,7 @@ def get_llm(provider: Optional[str] = None, temperature: float = 0.1):
             raise ValueError("OPENAI_API_KEY not set in .env file")
         
         return ChatOpenAI(
-            model="gpt-3.5-turbo",
+            model="gpt-4-turbo",  # Fixed: gpt-4.1 doesn't exist
             api_key=OPENAI_API_KEY,
             temperature=temperature,
             max_tokens=2048

@@ -88,6 +88,35 @@ class DataExtractionAgent:
     def __init__(self, processor=None):
         self.processor = processor or get_processor()
     
+    def _apply_aggregation(self, agg: str, column: str, table: str) -> str:
+        """
+        Apply aggregation with smart type casting.
+        Only casts to DOUBLE if column is VARCHAR/TEXT - otherwise uses native type.
+        """
+        agg_upper = agg.upper()
+        quoted_col = f'"{column}"'
+        
+        # Check column type from schema
+        try:
+            schema = self.processor.get_table_schema(table)
+            col_type = schema.get(column, "").upper()
+        except Exception:
+            # If schema check fails, default to safe casting
+            col_type = "VARCHAR"
+        
+        # For numeric aggregations, only cast if column is text type
+        if agg_upper in ['SUM', 'AVG', 'MAX', 'MIN']:
+            # Check if column is stored as text
+            if 'VARCHAR' in col_type or 'STRING' in col_type or 'TEXT' in col_type:
+                return f"{agg_upper}(CAST({quoted_col} AS DOUBLE))"
+            else:
+                # Already numeric - no cast needed
+                return f"{agg_upper}({quoted_col})"
+        elif agg_upper == 'COUNT':
+            return f"COUNT({quoted_col})"
+        else:
+            return f"{agg_upper}({quoted_col})"
+    
     def extract_data(self, structured_request: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute data extraction based on structured request with aggregations
@@ -129,17 +158,33 @@ class DataExtractionAgent:
                 # Add aggregations on entities
                 if aggregations and entities:
                     for entity in entities:
-                        if entity not in groupby:
+                        # Don't aggregate columns in groupby or filters
+                        if entity not in groupby and entity not in filters:
                             for agg in aggregations:
-                                select_parts.append(f'{agg.upper()}("{entity}") as {agg}_{entity}')
+                                agg_expr = self._apply_aggregation(agg, entity, primary_table)
+                                alias = f"{agg}_{entity.replace(' ', '_')}"
+                                select_parts.append(f"{agg_expr} as {alias}")
                 elif entities:
                     # If no aggregations specified but groupby exists, default to SUM for numeric
                     for entity in entities:
-                        if entity not in groupby:
-                            select_parts.append(f'SUM("{entity}") as total_{entity}')
+                        if entity not in groupby and entity not in filters:
+                            agg_expr = self._apply_aggregation('sum', entity, primary_table)
+                            alias = f"total_{entity.replace(' ', '_')}"
+                            select_parts.append(f"{agg_expr} as {alias}")
             elif entities:
-                # No groupby - simple select
-                select_parts = [f'"{e}"' if e != "*" else "*" for e in entities]
+                # No groupby - check if aggregations are requested
+                if aggregations:
+                    # Apply aggregations without GROUP BY
+                    # Don't aggregate columns used in filters (they're for WHERE clause only)
+                    for entity in entities:
+                        if entity not in filters:
+                            for agg in aggregations:
+                                agg_expr = self._apply_aggregation(agg, entity, primary_table)
+                                alias = f"{agg}_{entity.replace(' ', '_')}"
+                                select_parts.append(f"{agg_expr} as {alias}")
+                else:
+                    # Simple select without aggregations
+                    select_parts = [f'"{e}"' if e != "*" else "*" for e in entities]
             else:
                 select_parts = ["*"]
             
@@ -171,12 +216,24 @@ class DataExtractionAgent:
             
             # Add ORDER BY
             if orderby:
-                order_parts = [f'"{col}" {direction}' for col, direction in orderby.items()]
+                order_parts = []
+                for col, direction in orderby.items():
+                    # If ordering by an aggregated column, use the alias
+                    if aggregations and col in entities:
+                        # Use the aggregation alias (e.g., max_Amazon_MRP)
+                        alias = f"{aggregations[0]}_{col.replace(' ', '_')}"
+                        order_parts.append(f"{alias} {direction}")
+                    else:
+                        # Use the quoted column name
+                        order_parts.append(f'"{col}" {direction}')
                 sql += " ORDER BY " + ", ".join(order_parts)
             
-            # Default limit
+            # Add LIMIT (only if valid number)
             limit = structured_request.get("limit", 100)
-            sql += f" LIMIT {limit}"
+            if limit is not None and isinstance(limit, int) and limit > 0:
+                sql += f" LIMIT {limit}"
+            elif limit is None or not isinstance(limit, int):
+                sql += " LIMIT 100"  # Default fallback
             
             logger.info(f"Executing SQL: {sql}")
             
